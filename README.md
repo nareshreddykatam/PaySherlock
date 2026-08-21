@@ -4,11 +4,13 @@
 
 > Built for the Razorpay Buildathon — Open Track
 
-## Status: Phase 1 — Payment Data & Razorpay Foundation
+## Status: Phase 2 — AI Investigation Engine
 
-Phase 0 (monorepo tooling, structure, conventions) is complete. Phase 1 adds
-the Razorpay Test Mode integration and normalized payment data layer this
-project's future investigations will run on. **The AI agent, dashboard, and
+Phase 0 (monorepo tooling) and Phase 1 (Razorpay Test Mode integration,
+normalized payment data) are complete. Phase 2 adds the AI investigation
+engine itself: a provider-independent LLM layer, a typed tool registry, a
+bounded planner/execution loop, and a deterministic evidence/hypothesis
+system, exposed via `POST /investigations`. **The merchant dashboard and
 any financial actions are not implemented yet.** See
 [Development Status](#development-status) below and
 [docs/architecture](docs/architecture) for details.
@@ -64,18 +66,18 @@ conclusions are backed by structured evidence. Full details in
 
 ## Planned Technology Stack
 
-| Layer           | Choice                                                       |
-| --------------- | ------------------------------------------------------------ |
-| Language        | TypeScript                                                   |
-| Package manager | pnpm                                                         |
-| Monorepo        | Turborepo                                                    |
-| Frontend        | Next.js                                                      |
-| UI              | Tailwind CSS + shadcn/ui                                     |
-| Backend         | Node.js / TypeScript                                         |
-| Database        | PostgreSQL + Prisma                                          |
-| Background jobs | Redis + BullMQ                                               |
-| AI              | Provider-independent LLM adapter (OpenAI, Anthropic, others) |
-| Payments        | Razorpay APIs + Webhooks                                     |
+| Layer           | Choice                                                                     |
+| --------------- | -------------------------------------------------------------------------- |
+| Language        | TypeScript                                                                 |
+| Package manager | pnpm                                                                       |
+| Monorepo        | Turborepo                                                                  |
+| Frontend        | Next.js                                                                    |
+| UI              | Tailwind CSS + shadcn/ui                                                   |
+| Backend         | Node.js / TypeScript                                                       |
+| Database        | PostgreSQL + Prisma                                                        |
+| Background jobs | Redis + BullMQ                                                             |
+| AI              | Provider-independent LLM adapter (Anthropic implemented; others pluggable) |
+| Payments        | Razorpay APIs + Webhooks                                                   |
 
 ## Development Status
 
@@ -84,10 +86,13 @@ conclusions are backed by structured evidence. Full details in
 - [x] Razorpay adapter (payments/orders/refunds, Test Mode, read-only) + webhook signature verification
 - [x] Idempotent payment ingestion (API pull + webhook push)
 - [x] Read-only payment API (`/health`, `/payments`, `/payments/:id`)
-- [ ] Agent runtime and tools
+- [x] AI investigation engine — provider-independent LLM layer, 7 typed tools,
+      bounded planner/execution loop, deterministic hypothesis/evidence
+      system, `POST /investigations`
+- [x] Evaluation harness — 5 scenarios, 100% root-cause accuracy (`pnpm --filter @paysherlock/agent run eval`)
 - [ ] Merchant dashboard
-- [ ] Financial safety / guardrail system
-- [ ] Full audit logging (webhook processing is audited today; there's no agent yet to audit)
+- [ ] Financial safety / guardrail system for autonomous actions (no such actions exist yet)
+- [ ] Full audit logging of agent runs (investigations run in-process today; a persisted run log is a later phase)
 
 ### Local Setup
 
@@ -98,12 +103,17 @@ pnpm --filter @paysherlock/database run db:migrate:dev
 ```
 
 Working: `pnpm build`, `pnpm lint`, `pnpm typecheck`, `pnpm format:check`,
-`pnpm test` (Razorpay adapter, database layer, and API — run via Turborepo).
+`pnpm test` (120 tests across the Razorpay adapter, database layer, tools,
+agent, and API — run via Turborepo, no AI credentials required).
 
 `pnpm --filter @paysherlock/api run dev` starts the API on `PORT` (default
-`4000`). `pnpm --filter @paysherlock/api run ingest` pulls recent payments
-from Razorpay Test Mode into Postgres — safe to run repeatedly, every write
-is an idempotent upsert.
+`4000`) — by default with `AI_PROVIDER=deterministic`, so `POST
+/investigations` works with no AI credentials at all. Set
+`AI_PROVIDER=anthropic` + `AI_MODEL` + `AI_API_KEY` to use a real model.
+`pnpm --filter @paysherlock/api run ingest` pulls recent payments from
+Razorpay Test Mode into Postgres — safe to run repeatedly, every write is
+an idempotent upsert. `pnpm --filter @paysherlock/agent run eval` runs the
+5-scenario evaluation harness standalone.
 
 Not yet functional: the root `pnpm dev` (no `apps/web` yet — see
 [apps/web/README.md](apps/web/README.md)).
@@ -122,8 +132,9 @@ merchant approval step (no such action exists yet — see Development Status).
 ## Roadmap
 
 1. **Phase 0 — Foundation** _(done)_: monorepo, tooling, conventions.
-2. **Phase 1 — Payment Data & Razorpay Foundation** _(current)_: database
+2. **Phase 1 — Payment Data & Razorpay Foundation** _(done)_: database
    schema, Razorpay adapter (read-only), webhook ingestion, basic API.
-3. **Phase 2**: agent runtime, first tools, investigation flow (read-only).
+3. **Phase 2 — AI Investigation Engine** _(current)_: agent runtime, tools,
+   bounded investigation loop, evidence-backed results (read-only).
 4. **Phase 3**: merchant dashboard, evidence/investigation UI.
 5. **Phase 4**: guardrails, approvals, bounded actions, audit logging.

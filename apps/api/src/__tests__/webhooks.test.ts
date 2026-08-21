@@ -2,7 +2,7 @@ import { createHmac } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { Prisma } from "@paysherlock/database";
 import { buildServer } from "../server.js";
-import { createMockDb } from "./fixtures.js";
+import { createMockDb, noopRunInvestigation } from "./fixtures.js";
 
 const WEBHOOK_SECRET = "whsec_test_secret";
 
@@ -71,7 +71,11 @@ function post(app: ReturnType<typeof buildServer>, body: string, headers: Record
 describe("POST /webhooks/razorpay", () => {
   it("rejects a request with an invalid signature and never touches the database", async () => {
     const db = createMockDb();
-    const app = buildServer({ db, webhookSecret: WEBHOOK_SECRET });
+    const app = buildServer({
+      db,
+      webhookSecret: WEBHOOK_SECRET,
+      runInvestigation: noopRunInvestigation(),
+    });
     const body = paymentCapturedBody();
 
     const response = await post(app, body, {
@@ -87,7 +91,11 @@ describe("POST /webhooks/razorpay", () => {
 
   it("rejects a malformed (non-JSON) payload before it reaches the handler", async () => {
     const db = createMockDb();
-    const app = buildServer({ db, webhookSecret: WEBHOOK_SECRET });
+    const app = buildServer({
+      db,
+      webhookSecret: WEBHOOK_SECRET,
+      runInvestigation: noopRunInvestigation(),
+    });
     const body = "{not valid json";
 
     const response = await post(app, body, {
@@ -107,7 +115,11 @@ describe("POST /webhooks/razorpay", () => {
     db.order.findUnique.mockResolvedValue(null);
     db.payment.upsert.mockResolvedValue({ id: "internal-payment-1" });
     db.paymentEvent.update.mockResolvedValue({});
-    const app = buildServer({ db, webhookSecret: WEBHOOK_SECRET });
+    const app = buildServer({
+      db,
+      webhookSecret: WEBHOOK_SECRET,
+      runInvestigation: noopRunInvestigation(),
+    });
     const body = paymentCapturedBody();
 
     const response = await post(app, body, {
@@ -137,7 +149,11 @@ describe("POST /webhooks/razorpay", () => {
       id: "pe1",
       processingStatus: "PROCESSED",
     });
-    const app = buildServer({ db, webhookSecret: WEBHOOK_SECRET });
+    const app = buildServer({
+      db,
+      webhookSecret: WEBHOOK_SECRET,
+      runInvestigation: noopRunInvestigation(),
+    });
     const body = paymentCapturedBody({ eventId: "evt_dup" });
 
     const response = await post(app, body, {
@@ -156,7 +172,11 @@ describe("POST /webhooks/razorpay", () => {
     db.merchant.upsert.mockResolvedValue({ id: "merchant-1" });
     db.paymentEvent.create.mockResolvedValue({ id: "pe2" });
     db.paymentEvent.update.mockResolvedValue({});
-    const app = buildServer({ db, webhookSecret: WEBHOOK_SECRET });
+    const app = buildServer({
+      db,
+      webhookSecret: WEBHOOK_SECRET,
+      runInvestigation: noopRunInvestigation(),
+    });
     const body = unsupportedEventBody();
 
     const response = await post(app, body, {
@@ -176,7 +196,11 @@ describe("POST /webhooks/razorpay", () => {
 
   it("rejects a request missing the event-id header, needed for idempotency", async () => {
     const db = createMockDb();
-    const app = buildServer({ db, webhookSecret: WEBHOOK_SECRET });
+    const app = buildServer({
+      db,
+      webhookSecret: WEBHOOK_SECRET,
+      runInvestigation: noopRunInvestigation(),
+    });
     const body = paymentCapturedBody();
 
     const response = await post(app, body, { "x-razorpay-signature": sign(body) });

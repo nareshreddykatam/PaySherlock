@@ -29,10 +29,13 @@ export function createMockDb(): any {
       upsert: vi.fn(),
       findUnique: vi.fn(),
       findMany: vi.fn(),
+      aggregate: vi.fn(),
+      groupBy: vi.fn(),
     },
     refund: {
       upsert: vi.fn(),
       findMany: vi.fn(),
+      aggregate: vi.fn(),
     },
     paymentEvent: {
       create: vi.fn(),

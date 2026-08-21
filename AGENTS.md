@@ -23,8 +23,10 @@ docs/                Architecture, product, and decision records
 scripts/             Repo-level scripts
 ```
 
-This is a pnpm + Turborepo monorepo. All packages are currently Phase 0
-placeholders — no business logic has been implemented.
+This is a pnpm + Turborepo monorepo. `packages/database`, `packages/razorpay`,
+`packages/types`, `packages/tools`, `packages/agent`, and `apps/api` are
+implemented (Phases 0–2). `apps/web`, `packages/ui`, and
+`workers/investigator` are still placeholders.
 
 ## Architecture Principles
 
@@ -101,10 +103,26 @@ not require changes outside that package and its interface consumers.
 ## AI Agent Boundaries
 
 - LLM access goes through a provider-independent adapter (`AI_PROVIDER` env
-  var selects the implementation). Do not hardcode calls to a single
-  provider's SDK outside that adapter.
+  var selects the implementation — `packages/agent/src/provider/factory.ts`).
+  Do not hardcode calls to a single provider's SDK outside that adapter.
 - Agent code lives in `packages/agent`; it orchestrates calls to
   `packages/tools`, it does not embed business logic that belongs in tools.
+- The LLM proposes (which tools to call, which hypotheses to consider) and
+  narrates (summary/recommendations text) — it never decides a hypothesis's
+  status or confidence. That's `hypotheses/verifier.ts` +
+  `evidence/scorer.ts`, driven entirely by real tool output. Do not add a
+  code path where a provider's output directly sets `confidence`,
+  `status`, or `businessImpact` — those must always be computed.
+- Every tool's `ToolContext.merchantId` comes from the trusted server-side
+  request, never from the model/plan's input. Do not add a `merchantId`
+  field to any tool's `inputSchema`.
+- The agent loop (`runtime/loop.ts`) is hard-bounded by `maxSteps`
+  (`MAX_AGENT_STEPS` env var). A tool failure becomes a structured
+  `ToolResult` with `success: false` — tools/the loop must never throw past
+  `executeTool`.
+- Tests and the evaluation harness (`packages/agent/src/eval/`) always use
+  `DeterministicProvider`, never a real provider — see
+  [docs/decisions/0002](docs/decisions/0002-ai-investigation-engine.md).
 
 ## Git Conventions
 

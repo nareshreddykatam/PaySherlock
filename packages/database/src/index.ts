@@ -11,3 +11,5 @@ export * from "./queries/pagination.js";
 export * from "./queries/payments.js";
 export * from "./queries/orders.js";
 export * from "./queries/refunds.js";
+
+export * from "./analytics/index.js";

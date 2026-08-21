@@ -1,12 +1,16 @@
 import { describe, expect, it } from "vitest";
 import { buildServer } from "../server.js";
-import { createMockDb, paymentRowFixture } from "./fixtures.js";
+import { createMockDb, noopRunInvestigation, paymentRowFixture } from "./fixtures.js";
 
 describe("GET /payments", () => {
   it("returns a normalized page of payments (no raw Razorpay payload leaked)", async () => {
     const db = createMockDb();
     db.payment.findMany.mockResolvedValue([paymentRowFixture]);
-    const app = buildServer({ db, webhookSecret: "whsec_test" });
+    const app = buildServer({
+      db,
+      webhookSecret: "whsec_test",
+      runInvestigation: noopRunInvestigation(),
+    });
 
     const response = await app.inject({ method: "GET", url: "/payments" });
 
@@ -24,7 +28,11 @@ describe("GET /payments", () => {
   });
 
   it("rejects an out-of-range limit as a validation error", async () => {
-    const app = buildServer({ db: createMockDb(), webhookSecret: "whsec_test" });
+    const app = buildServer({
+      db: createMockDb(),
+      webhookSecret: "whsec_test",
+      runInvestigation: noopRunInvestigation(),
+    });
     const response = await app.inject({ method: "GET", url: "/payments?limit=500" });
 
     expect(response.statusCode).toBe(400);
@@ -37,7 +45,11 @@ describe("GET /payments/:id", () => {
   it("looks up by our internal id", async () => {
     const db = createMockDb();
     db.payment.findUnique.mockResolvedValue(paymentRowFixture);
-    const app = buildServer({ db, webhookSecret: "whsec_test" });
+    const app = buildServer({
+      db,
+      webhookSecret: "whsec_test",
+      runInvestigation: noopRunInvestigation(),
+    });
 
     const response = await app.inject({ method: "GET", url: "/payments/internal-1" });
 
@@ -49,7 +61,11 @@ describe("GET /payments/:id", () => {
   it("looks up by Razorpay payment id when the id is pay_-prefixed", async () => {
     const db = createMockDb();
     db.payment.findUnique.mockResolvedValue(paymentRowFixture);
-    const app = buildServer({ db, webhookSecret: "whsec_test" });
+    const app = buildServer({
+      db,
+      webhookSecret: "whsec_test",
+      runInvestigation: noopRunInvestigation(),
+    });
 
     const response = await app.inject({ method: "GET", url: "/payments/pay_test0000000001" });
 
@@ -63,7 +79,11 @@ describe("GET /payments/:id", () => {
   it("returns 404 with a safe error body for an unknown id", async () => {
     const db = createMockDb();
     db.payment.findUnique.mockResolvedValue(null);
-    const app = buildServer({ db, webhookSecret: "whsec_test" });
+    const app = buildServer({
+      db,
+      webhookSecret: "whsec_test",
+      runInvestigation: noopRunInvestigation(),
+    });
 
     const response = await app.inject({ method: "GET", url: "/payments/does-not-exist" });
 

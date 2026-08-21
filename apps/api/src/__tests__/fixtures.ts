@@ -36,6 +36,13 @@ export function createMockDb(): any {
   };
 }
 
+/** Stub for ServerDeps.runInvestigation in tests that don't exercise the
+ * /investigations route — a fresh mock per call so call counts never leak
+ * between tests. */
+export function noopRunInvestigation() {
+  return vi.fn();
+}
+
 export const paymentRowFixture = {
   id: "internal-1",
   merchantId: "merchant-1",

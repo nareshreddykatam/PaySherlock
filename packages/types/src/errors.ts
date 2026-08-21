@@ -42,6 +42,13 @@ export class DatabaseError extends AppError {
   readonly httpStatus = 500;
 }
 
+/** The LLM provider or investigation runtime failed (not a tool failure —
+ * those are captured as structured ToolResult errors, not thrown). */
+export class AgentError extends AppError {
+  readonly code = "AGENT_ERROR";
+  readonly httpStatus = 502;
+}
+
 export function isAppError(error: unknown): error is AppError {
   return error instanceof AppError;
 }

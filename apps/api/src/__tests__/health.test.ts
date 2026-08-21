@@ -1,10 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { buildServer } from "../server.js";
-import { createMockDb } from "./fixtures.js";
+import { createMockDb, noopRunInvestigation } from "./fixtures.js";
 
 describe("GET /health", () => {
   it("returns an ok status without leaking internal details", async () => {
-    const app = buildServer({ db: createMockDb(), webhookSecret: "whsec_test" });
+    const app = buildServer({
+      db: createMockDb(),
+      webhookSecret: "whsec_test",
+      runInvestigation: noopRunInvestigation(),
+    });
     const response = await app.inject({ method: "GET", url: "/health" });
 
     expect(response.statusCode).toBe(200);

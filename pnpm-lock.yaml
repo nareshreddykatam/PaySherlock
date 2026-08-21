@@ -32,12 +32,18 @@ importers:
 
   apps/api:
     dependencies:
+      '@paysherlock/agent':
+        specifier: workspace:*
+        version: link:../../packages/agent
       '@paysherlock/database':
         specifier: workspace:*
         version: link:../../packages/database
       '@paysherlock/razorpay':
         specifier: workspace:*
         version: link:../../packages/razorpay
+      '@paysherlock/tools':
+        specifier: workspace:*
+        version: link:../../packages/tools
       '@paysherlock/types':
         specifier: workspace:*
         version: link:../../packages/types
@@ -63,13 +69,31 @@ importers:
 
   packages/agent:
     dependencies:
+      '@paysherlock/tools':
+        specifier: workspace:*
+        version: link:../tools
       '@paysherlock/types':
         specifier: workspace:*
         version: link:../types
+      zod:
+        specifier: ^3.24.0
+        version: 3.25.76
     devDependencies:
+      '@paysherlock/database':
+        specifier: workspace:*
+        version: link:../database
+      '@types/node':
+        specifier: ^22.10.0
+        version: 22.20.1
+      tsx:
+        specifier: ^4.19.0
+        version: 4.23.12
       typescript:
         specifier: ^5.7.0
         version: 5.9.3
+      vitest:
+        specifier: ^2.1.0
+        version: 2.1.9(@types/node@22.20.1)(supports-color@7.2.0)
 
   packages/database:
     dependencies:
@@ -114,15 +138,28 @@ importers:
 
   packages/tools:
     dependencies:
+      '@paysherlock/database':
+        specifier: workspace:*
+        version: link:../database
       '@paysherlock/types':
         specifier: workspace:*
         version: link:../types
+      zod:
+        specifier: ^3.24.0
+        version: 3.25.76
     devDependencies:
       typescript:
         specifier: ^5.7.0
         version: 5.9.3
+      vitest:
+        specifier: ^2.1.0
+        version: 2.1.9(@types/node@22.20.1)(supports-color@7.2.0)
 
   packages/types:
+    dependencies:
+      zod:
+        specifier: ^3.24.0
+        version: 3.25.76
     devDependencies:
       typescript:
         specifier: ^5.7.0
