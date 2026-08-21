@@ -25,6 +25,10 @@ describe("runInvestigation", () => {
     expect(result.evidence.length).toBeGreaterThan(0);
     expect(result.meta.toolCalls).toBeGreaterThan(0);
     expect(result.meta.provider).toBe("deterministic");
+    // The full hypothesis set (Phase 3's hypothesis visualization) — every
+    // catalog hypothesis, whatever its final verified status.
+    expect(result.hypotheses).toHaveLength(5);
+    expect(result.hypotheses.some((h) => h.status === "SUPPORTED")).toBe(true);
   });
 
   it("reports no anomaly (no rootCause) for the normal-business scenario, never a false positive", async () => {

@@ -10,7 +10,7 @@ agent, not a chatbot wrapper around a dashboard.
 ## Repository Structure
 
 ```
-apps/web           Merchant dashboard / frontend (Next.js — not yet scaffolded)
+apps/web           Merchant frontend — Investigation Command Center (Next.js)
 apps/api            Backend/API service
 packages/agent      AI agent runtime and orchestration
 packages/tools       Explicit typed tools the agent calls
@@ -24,8 +24,8 @@ scripts/             Repo-level scripts
 ```
 
 This is a pnpm + Turborepo monorepo. `packages/database`, `packages/razorpay`,
-`packages/types`, `packages/tools`, `packages/agent`, and `apps/api` are
-implemented (Phases 0–2). `apps/web`, `packages/ui`, and
+`packages/types`, `packages/tools`, `packages/agent`, `apps/api`, and
+`apps/web` are implemented (Phases 0–3). `packages/ui` and
 `workers/investigator` are still placeholders.
 
 ## Architecture Principles
@@ -65,6 +65,13 @@ implemented (Phases 0–2). `apps/web`, `packages/ui`, and
   `Database` client as a parameter (never a module-level singleton) so
   they're testable without a live Postgres — see
   [docs/decisions/0001](docs/decisions/0001-payment-data-foundation.md).
+- `apps/web` never fabricates a metric, confidence value, or business
+  impact — every number rendered comes from a schema-validated API
+  response (`InvestigationResultSchema`/`OverviewResponseSchema` from
+  `packages/types`, or a frontend-local schema for endpoints that don't
+  have a shared one yet). A missing/failed API call renders an honest
+  empty or error state, never a placeholder number dressed up as real data
+  — see [docs/decisions/0003](docs/decisions/0003-investigation-command-center.md).
 
 ## Security Requirements
 

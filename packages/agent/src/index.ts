@@ -25,3 +25,4 @@ export * from "./runtime/context.js";
 export * from "./runtime/loop.js";
 export * from "./runtime/agent.js";
 export * from "./runtime/runner.js";
+export * from "./runtime/snapshot.js";

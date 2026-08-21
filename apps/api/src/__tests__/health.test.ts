@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildServer } from "../server.js";
-import { createMockDb, noopRunInvestigation } from "./fixtures.js";
+import { createMockDb, noopGetOverview, noopRunInvestigation } from "./fixtures.js";
 
 describe("GET /health", () => {
   it("returns an ok status without leaking internal details", async () => {
@@ -8,6 +8,7 @@ describe("GET /health", () => {
       db: createMockDb(),
       webhookSecret: "whsec_test",
       runInvestigation: noopRunInvestigation(),
+      getOverview: noopGetOverview(),
     });
     const response = await app.inject({ method: "GET", url: "/health" });
 

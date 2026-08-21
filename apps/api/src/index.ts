@@ -3,6 +3,7 @@ import { createInvestigationRunner, createProvider } from "@paysherlock/agent";
 import { createToolRegistry } from "@paysherlock/tools";
 import { loadConfig } from "./config.js";
 import { buildServer } from "./server.js";
+import { getOverview } from "./services/overviewService.js";
 
 async function main() {
   const config = loadConfig();
@@ -23,7 +24,9 @@ async function main() {
   const app = buildServer({
     db,
     webhookSecret: config.RAZORPAY_WEBHOOK_SECRET,
+    corsOrigin: config.CORS_ORIGIN,
     runInvestigation: (request) => investigationRunner(request, db),
+    getOverview: (merchantId) => getOverview(db, merchantId),
   });
 
   await app.listen({ port: config.PORT, host: "0.0.0.0" });

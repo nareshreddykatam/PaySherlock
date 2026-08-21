@@ -1,7 +1,7 @@
 # Architecture
 
-Status: Phase 2 — AI Investigation Engine. This covers what exists today.
-See [`docs/decisions`](../decisions) for the reasoning behind these
+Status: Phase 3 — Investigation Command Center. This covers what exists
+today. See [`docs/decisions`](../decisions) for the reasoning behind these
 choices, and [`AGENTS.md`](../../AGENTS.md) for the standing architecture
 principles.
 
@@ -207,6 +207,92 @@ evidence traceability, false-positive rate, tool execution success, invalid
 tool-call rate, and average steps — wired into `pnpm test`
 (`__tests__/evaluation.test.ts`) and runnable standalone via
 `pnpm --filter @paysherlock/agent run eval`.
+
+## Frontend: Investigation Command Center (Phase 3)
+
+```
+apps/web (Next.js App Router, Turbopack)
+      │
+      ├─ app/                page routes: Overview (/), Investigate,
+      │                       Payments, Issues, History — each a client
+      │                       component driving a typed API call
+      │
+      ├─ lib/api/             apiFetch() + per-resource client functions
+      │                       (investigations, overview, payments) —
+      │                       every response is schema-validated before
+      │                       the UI ever sees it; NEXT_PUBLIC_API_URL is
+      │                       the one configurable base URL
+      │
+      ├─ lib/history/         sessionStorage-backed investigation history
+      │                       (session-only — no server persistence exists)
+      │
+      ├─ components/          design-system primitives (ui/), layout
+      │                       (sidebar/header/shell), and feature
+      │                       components (investigation/, payments/,
+      │                       issues/, dashboard/)
+      │
+      └─ app/globals.css      Tailwind v4 @theme tokens — the single
+                               source of color/spacing/radius/typography
+```
+
+`apps/web` calls exactly three backend surfaces, all schema-validated
+against real contracts:
+
+| Endpoint                             | Used by                    | Contract                                                                                                                             |
+| ------------------------------------ | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `GET /overview`                      | Overview, Issues pages     | `OverviewResponseSchema` (`packages/types`)                                                                                          |
+| `POST /investigations`               | Investigate, History pages | `InvestigationResultSchema` (`packages/types`)                                                                                       |
+| `GET /payments`, `GET /payments/:id` | Payments page              | Frontend-local `PaymentSchema`/`PaymentsPageSchema` (`lib/api/payments.ts`) — see the ADR for why this one isn't in `packages/types` |
+
+### `GET /overview` (new in Phase 3)
+
+```
+GET /overview (apps/api)
+      │
+      ▼
+services/overviewService.ts::getOverview
+      │
+      ├─▶ packages/agent: runDeterministicSnapshot()   — same tool
+      │     registry + DEFAULT_INVESTIGATION_STEPS + verifyHypotheses
+      │     Phase 2 investigations use, minus provider.plan()/narrate()
+      │
+      ├─▶ one extra comparePeriodsTool("revenue") call  — for the
+      │     Revenue metric card's period-over-period change
+      │
+      └─▶ maps hypotheses → OverviewIssue[] (severity from status),
+          computes successRate/failureRate from snapshot.findings,
+          attaches revenueAtRisk only when a rootCause hypothesis exists
+          and its estimated impact is positive
+      │
+      ▼
+OverviewResponse (validated against OverviewResponseSchema)
+```
+
+This is **not** autonomous monitoring — it runs synchronously inside the
+HTTP request, on demand, with no scheduler or persisted detection state.
+See the ADR for the full reasoning and for why `hypotheses` was added to
+`InvestigationResultSchema` alongside it.
+
+### Design system
+
+Dark-only theme (`color-scheme: dark`, no toggle), defined once as
+Tailwind v4 `@theme` CSS variables in `app/globals.css` — canvas/surface
+tiers, ink (text) tiers, a sparingly-used emerald accent, amber for
+warnings, red for critical. Reusable primitives live in
+`components/ui/` (Button/LinkButton, Card, Badge, Input, Skeleton,
+StatusDot, EmptyState, ErrorState, Drawer) and are composed by every page
+— no page defines its own one-off colors or spacing.
+
+### Investigation UX
+
+`app/investigate/page.tsx` is a small state machine
+(`idle → loading → result | error`) around one real `POST /investigations`
+call. `ProgressView` labels mirror the backend's actual
+`DEFAULT_INVESTIGATION_STEPS` (no fake tool-call streaming); `ResultView`
+renders `rootCause`/`confidence`/`businessImpact`/`evidence`/`hypotheses`
+exactly as the API returns them — the frontend never computes or alters a
+number. See the ADR for the follow-up-as-new-request and session-only
+history decisions.
 
 ## Future agent tool foundation → now implemented
 

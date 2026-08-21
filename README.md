@@ -4,15 +4,18 @@
 
 > Built for the Razorpay Buildathon — Open Track
 
-## Status: Phase 2 — AI Investigation Engine
+## Status: Phase 3 — Investigation Command Center
 
-Phase 0 (monorepo tooling) and Phase 1 (Razorpay Test Mode integration,
-normalized payment data) are complete. Phase 2 adds the AI investigation
-engine itself: a provider-independent LLM layer, a typed tool registry, a
-bounded planner/execution loop, and a deterministic evidence/hypothesis
-system, exposed via `POST /investigations`. **The merchant dashboard and
-any financial actions are not implemented yet.** See
-[Development Status](#development-status) below and
+Phase 0 (monorepo tooling), Phase 1 (Razorpay Test Mode integration,
+normalized payment data), and Phase 2 (the AI investigation engine —
+provider-independent LLM layer, typed tool registry, bounded
+planner/execution loop, deterministic evidence/hypothesis system, exposed
+via `POST /investigations`) are complete. Phase 3 adds the merchant-facing
+frontend (`apps/web`) — an Investigation Command Center that surfaces the
+real investigation engine, plus a new `GET /overview` endpoint that reuses
+Phase 2's tool pipeline to power real dashboard metrics. **Financial
+actions, autonomous monitoring, and merchant approval workflows are not
+implemented yet.** See [Development Status](#development-status) below and
 [docs/architecture](docs/architecture) for details.
 
 ## Problem
@@ -64,15 +67,15 @@ action requires a guardrail check and merchant approval before execution; AI
 conclusions are backed by structured evidence. Full details in
 [`AGENTS.md`](AGENTS.md).
 
-## Planned Technology Stack
+## Technology Stack
 
 | Layer           | Choice                                                                     |
 | --------------- | -------------------------------------------------------------------------- |
 | Language        | TypeScript                                                                 |
 | Package manager | pnpm                                                                       |
 | Monorepo        | Turborepo                                                                  |
-| Frontend        | Next.js                                                                    |
-| UI              | Tailwind CSS + shadcn/ui                                                   |
+| Frontend        | Next.js (App Router, Turbopack) + React                                    |
+| UI              | Tailwind CSS v4 + Radix UI primitives                                      |
 | Backend         | Node.js / TypeScript                                                       |
 | Database        | PostgreSQL + Prisma                                                        |
 | Background jobs | Redis + BullMQ                                                             |
@@ -90,9 +93,15 @@ conclusions are backed by structured evidence. Full details in
       bounded planner/execution loop, deterministic hypothesis/evidence
       system, `POST /investigations`
 - [x] Evaluation harness — 5 scenarios, 100% root-cause accuracy (`pnpm --filter @paysherlock/agent run eval`)
-- [ ] Merchant dashboard
+- [x] Merchant frontend (`apps/web`) — Overview, Investigate, Payments, Issues,
+      History; real API integration only, no fabricated data
+      (see [apps/web/README.md](apps/web/README.md))
+- [x] `GET /overview` — real merchant metrics + AI-detected issues, derived
+      from Phase 2's tool pipeline via `runDeterministicSnapshot` (not
+      autonomous monitoring — runs synchronously per request)
 - [ ] Financial safety / guardrail system for autonomous actions (no such actions exist yet)
 - [ ] Full audit logging of agent runs (investigations run in-process today; a persisted run log is a later phase)
+- [ ] Autonomous/scheduled monitoring, notifications, merchant approval workflows
 
 ### Local Setup
 
@@ -103,8 +112,9 @@ pnpm --filter @paysherlock/database run db:migrate:dev
 ```
 
 Working: `pnpm build`, `pnpm lint`, `pnpm typecheck`, `pnpm format:check`,
-`pnpm test` (120 tests across the Razorpay adapter, database layer, tools,
-agent, and API — run via Turborepo, no AI credentials required).
+`pnpm test` (144 tests across the Razorpay adapter, database layer, tools,
+agent, API, and web frontend — run via Turborepo, no AI credentials or
+live database required for the test suite).
 
 `pnpm --filter @paysherlock/api run dev` starts the API on `PORT` (default
 `4000`) — by default with `AI_PROVIDER=deterministic`, so `POST
@@ -115,8 +125,10 @@ Razorpay Test Mode into Postgres — safe to run repeatedly, every write is
 an idempotent upsert. `pnpm --filter @paysherlock/agent run eval` runs the
 5-scenario evaluation harness standalone.
 
-Not yet functional: the root `pnpm dev` (no `apps/web` yet — see
-[apps/web/README.md](apps/web/README.md)).
+`pnpm --filter @paysherlock/web dev` starts the frontend on
+`http://localhost:3000` (set `NEXT_PUBLIC_API_URL` in
+`apps/web/.env.local` if the API isn't on the default `http://localhost:4000`
+— see [apps/web/README.md](apps/web/README.md)).
 
 ## Security Note
 
@@ -134,7 +146,8 @@ merchant approval step (no such action exists yet — see Development Status).
 1. **Phase 0 — Foundation** _(done)_: monorepo, tooling, conventions.
 2. **Phase 1 — Payment Data & Razorpay Foundation** _(done)_: database
    schema, Razorpay adapter (read-only), webhook ingestion, basic API.
-3. **Phase 2 — AI Investigation Engine** _(current)_: agent runtime, tools,
+3. **Phase 2 — AI Investigation Engine** _(done)_: agent runtime, tools,
    bounded investigation loop, evidence-backed results (read-only).
-4. **Phase 3**: merchant dashboard, evidence/investigation UI.
+4. **Phase 3 — Investigation Command Center** _(current)_: merchant
+   frontend, real evidence/hypothesis/investigation UI, `GET /overview`.
 5. **Phase 4**: guardrails, approvals, bounded actions, audit logging.

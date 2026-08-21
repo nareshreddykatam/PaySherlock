@@ -23,10 +23,13 @@ export function createMockDb(): any {
       upsert: vi.fn(),
       findUnique: vi.fn(),
       findMany: vi.fn(),
+      aggregate: vi.fn(),
+      groupBy: vi.fn(),
     },
     refund: {
       upsert: vi.fn(),
       findMany: vi.fn(),
+      aggregate: vi.fn(),
     },
     paymentEvent: {
       create: vi.fn(),
@@ -40,6 +43,12 @@ export function createMockDb(): any {
  * /investigations route — a fresh mock per call so call counts never leak
  * between tests. */
 export function noopRunInvestigation() {
+  return vi.fn();
+}
+
+/** Stub for ServerDeps.getOverview in tests that don't exercise the
+ * /overview route. */
+export function noopGetOverview() {
   return vi.fn();
 }
 

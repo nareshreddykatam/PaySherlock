@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { buildServer } from "../server.js";
-import { createMockDb } from "./fixtures.js";
+import { createMockDb, noopGetOverview } from "./fixtures.js";
 
 const fakeResult = {
   question: "Why did revenue drop?",
@@ -18,7 +18,12 @@ describe("POST /investigations", () => {
     const db = createMockDb();
     db.merchant.findFirst.mockResolvedValue({ id: "trusted-merchant-1" });
     const runInvestigation = vi.fn().mockResolvedValue(fakeResult);
-    const app = buildServer({ db, webhookSecret: "whsec_test", runInvestigation });
+    const app = buildServer({
+      db,
+      webhookSecret: "whsec_test",
+      runInvestigation,
+      getOverview: noopGetOverview(),
+    });
 
     const response = await app.inject({
       method: "POST",
@@ -38,7 +43,12 @@ describe("POST /investigations", () => {
   it("rejects a missing/empty question as a validation error", async () => {
     const db = createMockDb();
     const runInvestigation = vi.fn();
-    const app = buildServer({ db, webhookSecret: "whsec_test", runInvestigation });
+    const app = buildServer({
+      db,
+      webhookSecret: "whsec_test",
+      runInvestigation,
+      getOverview: noopGetOverview(),
+    });
 
     const response = await app.inject({ method: "POST", url: "/investigations", payload: {} });
 
@@ -52,7 +62,12 @@ describe("POST /investigations", () => {
     const db = createMockDb();
     db.merchant.findFirst.mockResolvedValue({ id: "merchant-1" });
     const runInvestigation = vi.fn().mockRejectedValue(new Error("provider unreachable"));
-    const app = buildServer({ db, webhookSecret: "whsec_test", runInvestigation });
+    const app = buildServer({
+      db,
+      webhookSecret: "whsec_test",
+      runInvestigation,
+      getOverview: noopGetOverview(),
+    });
 
     const response = await app.inject({
       method: "POST",

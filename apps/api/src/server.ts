@@ -1,12 +1,18 @@
 import Fastify, { type FastifyInstance } from "fastify";
+import cors from "@fastify/cors";
 import type { Database } from "@paysherlock/database";
-import type { InvestigationRequest, InvestigationResult } from "@paysherlock/types";
+import type {
+  InvestigationRequest,
+  InvestigationResult,
+  OverviewResponse,
+} from "@paysherlock/types";
 import { registerErrorHandler } from "./errorHandler.js";
 import { registerRawBodyCapture } from "./plugins/rawBody.js";
 import { registerHealthRoute } from "./routes/health.js";
 import { registerPaymentRoutes } from "./routes/payments.js";
 import { registerWebhookRoutes } from "./routes/webhooks.js";
 import { registerInvestigationRoutes } from "./routes/investigations.js";
+import { registerOverviewRoutes } from "./routes/overview.js";
 
 export interface ServerDeps {
   db: Database;
@@ -16,6 +22,11 @@ export interface ServerDeps {
    * function, which keeps route tests independent of provider/tooling
    * setup. See @paysherlock/agent's createInvestigationRunner. */
   runInvestigation: (request: InvestigationRequest) => Promise<InvestigationResult>;
+  /** Builds the Overview/Issues snapshot for a trusted merchant id — see
+   * services/overviewService.ts. */
+  getOverview: (merchantId: string) => Promise<OverviewResponse>;
+  /** Origin allowed to call this API from a browser (apps/web). */
+  corsOrigin?: string;
 }
 
 /**
@@ -35,6 +46,8 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
     },
   });
 
+  void app.register(cors, { origin: deps.corsOrigin ?? "http://localhost:3000" });
+
   registerRawBodyCapture(app);
   registerErrorHandler(app);
 
@@ -42,6 +55,7 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
   registerPaymentRoutes(app, deps);
   registerWebhookRoutes(app, deps);
   registerInvestigationRoutes(app, deps);
+  registerOverviewRoutes(app, deps);
 
   return app;
 }

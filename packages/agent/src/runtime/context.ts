@@ -1,4 +1,4 @@
-import type { InvestigationRequest } from "@paysherlock/types";
+import type { TimeRange } from "@paysherlock/types";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const DEFAULT_BASELINE_DAYS = 7;
@@ -13,13 +13,16 @@ export interface DefaultToolArgs {
 /**
  * Resolves the default time window every tool call in a plan is seeded
  * with, so neither a real model nor the deterministic provider has to do
- * date arithmetic: explicit `request.timeRange` if given, otherwise
- * "yesterday" (UTC) with a baseline of the preceding 7 days — matching the
- * Phase 2 brief's compare_periods example. A step's own `input` can still
- * override any of these fields.
+ * date arithmetic: explicit `timeRange` if given, otherwise "yesterday"
+ * (UTC) with a baseline of the preceding 7 days — matching the Phase 2
+ * brief's compare_periods example. A step's own `input` can still override
+ * any of these fields. Also reused by runtime/snapshot.ts (Phase 3's
+ * Overview/Issues endpoint), which has no "question" to build a full
+ * InvestigationRequest from — hence taking just `{ timeRange? }` rather
+ * than the whole request.
  */
 export function resolveDefaultToolArgs(
-  request: InvestigationRequest,
+  request: { timeRange?: TimeRange },
   now: Date = new Date(),
 ): DefaultToolArgs {
   let start: Date;

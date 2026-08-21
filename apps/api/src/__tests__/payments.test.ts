@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { buildServer } from "../server.js";
-import { createMockDb, noopRunInvestigation, paymentRowFixture } from "./fixtures.js";
+import {
+  createMockDb,
+  noopGetOverview,
+  noopRunInvestigation,
+  paymentRowFixture,
+} from "./fixtures.js";
 
 describe("GET /payments", () => {
   it("returns a normalized page of payments (no raw Razorpay payload leaked)", async () => {
@@ -10,6 +15,7 @@ describe("GET /payments", () => {
       db,
       webhookSecret: "whsec_test",
       runInvestigation: noopRunInvestigation(),
+      getOverview: noopGetOverview(),
     });
 
     const response = await app.inject({ method: "GET", url: "/payments" });
@@ -32,6 +38,7 @@ describe("GET /payments", () => {
       db: createMockDb(),
       webhookSecret: "whsec_test",
       runInvestigation: noopRunInvestigation(),
+      getOverview: noopGetOverview(),
     });
     const response = await app.inject({ method: "GET", url: "/payments?limit=500" });
 
@@ -49,6 +56,7 @@ describe("GET /payments/:id", () => {
       db,
       webhookSecret: "whsec_test",
       runInvestigation: noopRunInvestigation(),
+      getOverview: noopGetOverview(),
     });
 
     const response = await app.inject({ method: "GET", url: "/payments/internal-1" });
@@ -65,6 +73,7 @@ describe("GET /payments/:id", () => {
       db,
       webhookSecret: "whsec_test",
       runInvestigation: noopRunInvestigation(),
+      getOverview: noopGetOverview(),
     });
 
     const response = await app.inject({ method: "GET", url: "/payments/pay_test0000000001" });
@@ -83,6 +92,7 @@ describe("GET /payments/:id", () => {
       db,
       webhookSecret: "whsec_test",
       runInvestigation: noopRunInvestigation(),
+      getOverview: noopGetOverview(),
     });
 
     const response = await app.inject({ method: "GET", url: "/payments/does-not-exist" });

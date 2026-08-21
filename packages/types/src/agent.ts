@@ -128,6 +128,13 @@ export const InvestigationResultSchema = z.object({
   businessImpact: BusinessImpactSchema.optional(),
   evidence: z.array(EvidenceSchema),
   rejectedHypotheses: z.array(z.string()),
+  /** The full, verified hypothesis set (every candidate, whatever its final
+   * status) — added for Phase 3's hypothesis visualization. `.default([])`
+   * keeps this additive/backward-compatible with any InvestigationResult
+   * constructed before this field existed. `rejectedHypotheses` is kept
+   * alongside it rather than removed, to avoid a breaking change to
+   * existing consumers/tests. */
+  hypotheses: z.array(HypothesisSchema).default([]),
   recommendations: z.array(z.string()),
   /** Observability metadata — see runtime/context.ts. Safe to log/display;
    * never contains secrets or hidden chain-of-thought. */

@@ -61,6 +61,7 @@ export function assembleInvestigationResult(params: AssembleResultParams): Inves
         )
       : [],
     rejectedHypotheses,
+    hypotheses: params.hypotheses,
     recommendations: params.narration.recommendations,
     meta: {
       investigationId: params.investigationId,

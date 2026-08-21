@@ -17,6 +17,8 @@ const EnvSchema = z
     AI_MODEL: z.string().optional(),
     AI_API_KEY: z.string().optional(),
     MAX_AGENT_STEPS: z.coerce.number().int().positive().default(8),
+    // Browser origin allowed to call this API — apps/web's dev/deployed URL.
+    CORS_ORIGIN: z.string().min(1).default("http://localhost:3000"),
   })
   .superRefine((env, ctx) => {
     if (env.AI_PROVIDER === "anthropic" && (!env.AI_MODEL || !env.AI_API_KEY)) {
