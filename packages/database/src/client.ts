@@ -32,9 +32,13 @@ export type {
   Refund,
   PaymentEvent,
   Settlement,
+  Issue,
   OrderStatus,
   PaymentStatus,
   PaymentMethod,
   RefundStatus,
   PaymentEventProcessingStatus,
+  IssueAnomalyType,
+  IssueSeverityLevel,
+  IssueLifecycleStatus,
 } from "@prisma/client";

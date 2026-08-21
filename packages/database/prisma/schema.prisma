@@ -31,6 +31,7 @@ model Merchant {
   payments    Payment[]
   refunds     Refund[]
   settlements Settlement[]
+  issues      Issue[]
 
   @@map("merchants")
 }
@@ -192,6 +193,94 @@ model PaymentEvent {
   @@index([eventType])
   @@index([resourceType, resourceId])
   @@map("payment_events")
+}
+
+enum IssueAnomalyType {
+  PAYMENT_FAILURE_SPIKE
+  PAYMENT_METHOD_DEGRADATION
+  REFUND_SPIKE
+  TRANSACTION_VOLUME_DECLINE
+  HIGH_VALUE_TRANSACTION_DECLINE
+}
+
+enum IssueSeverityLevel {
+  INFO
+  WARNING
+  CRITICAL
+}
+
+enum IssueLifecycleStatus {
+  DETECTED
+  INVESTIGATING
+  IDENTIFIED
+  MONITORING
+  RESOLVED
+  DISMISSED
+  INVESTIGATION_FAILED
+}
+
+/// Phase 4 — a persisted anomaly the deterministic detection engine found,
+/// optionally enriched by the existing Phase 2 investigation engine. See
+/// docs/decisions for the fingerprint/dedup strategy and lifecycle rules.
+model Issue {
+  id         String   @id @default(cuid())
+  merchant   Merchant @relation(fields: [merchantId], references: [id])
+  merchantId String
+
+  type     IssueAnomalyType
+  /// Human-readable, e.g. "UPI payment degradation" — never re-derived by
+  /// the frontend.
+  title    String
+  severity IssueSeverityLevel
+  status   IssueLifecycleStatus @default(DETECTED)
+
+  detectedAt DateTime
+
+  metric         String
+  currentValue   Float
+  baselineValue  Float
+  absoluteChange Float
+  relativeChange Float?
+  sampleSize     Int
+  /// e.g. a payment method name for PAYMENT_METHOD_DEGRADATION; null for
+  /// merchant-wide detectors.
+  dimension      String?
+
+  /// Deterministic dedup key (type + dimension + day bucket) — see
+  /// docs/decisions. Uniqueness among *active* issues is enforced in
+  /// application code (packages/database/src/upsert/issue.ts), not a DB
+  /// constraint, so a resolved/dismissed issue's fingerprint can recur as a
+  /// brand-new row later without being blocked by history.
+  fingerprint     String
+  /// How many consecutive detection runs have confirmed this same active
+  /// issue — the basis for the persistence-based severity escalation
+  /// policy (see docs/decisions).
+  occurrenceCount Int    @default(1)
+
+  /// Set once an automatic investigation has been triggered — never
+  /// re-triggered for the same issue while it's already set and the issue
+  /// is active (storm prevention).
+  investigationId String?
+  rootCause       String?
+  /// Mirrors InvestigationResult.confidence ("low" | "medium" | "high") —
+  /// stored as a plain string rather than a second small enum, matching
+  /// how similar optional derived text fields (e.g. Payment.errorCode) are
+  /// modeled elsewhere in this schema.
+  confidence      String?
+  estimatedImpactMinorUnits Int?
+  /// Full cached InvestigationResult (evidence, hypotheses, recommendations,
+  /// …) from the triggering investigation, so the issue-detail view can
+  /// render it without a separate investigation-persistence layer.
+  investigationResult Json?
+  /// Safe (no stack trace) message when status is INVESTIGATION_FAILED.
+  investigationError   String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([merchantId, status])
+  @@index([merchantId, fingerprint])
+  @@map("issues")
 }
 
 /// Normalized Razorpay Settlement. Schema only in Phase 1 — no

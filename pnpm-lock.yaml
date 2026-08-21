@@ -41,6 +41,9 @@ importers:
       '@paysherlock/database':
         specifier: workspace:*
         version: link:../../packages/database
+      '@paysherlock/detection':
+        specifier: workspace:*
+        version: link:../../packages/detection
       '@paysherlock/razorpay':
         specifier: workspace:*
         version: link:../../packages/razorpay
@@ -199,6 +202,28 @@ importers:
         specifier: ^2.1.0
         version: 2.1.9(@types/node@22.20.1)(jsdom@30.0.1)(lightningcss@1.33.0)(supports-color@7.2.0)
 
+  packages/detection:
+    dependencies:
+      '@paysherlock/database':
+        specifier: workspace:*
+        version: link:../database
+      '@paysherlock/tools':
+        specifier: workspace:*
+        version: link:../tools
+      '@paysherlock/types':
+        specifier: workspace:*
+        version: link:../types
+      zod:
+        specifier: ^3.24.0
+        version: 3.25.76
+    devDependencies:
+      typescript:
+        specifier: ^5.7.0
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.0
+        version: 2.1.9(@types/node@22.20.1)(jsdom@30.0.1)(lightningcss@1.33.0)(supports-color@7.2.0)
+
   packages/razorpay:
     dependencies:
       '@paysherlock/types':
@@ -255,13 +280,37 @@ importers:
 
   workers/investigator:
     dependencies:
+      '@paysherlock/agent':
+        specifier: workspace:*
+        version: link:../../packages/agent
+      '@paysherlock/database':
+        specifier: workspace:*
+        version: link:../../packages/database
+      '@paysherlock/detection':
+        specifier: workspace:*
+        version: link:../../packages/detection
+      '@paysherlock/tools':
+        specifier: workspace:*
+        version: link:../../packages/tools
       '@paysherlock/types':
         specifier: workspace:*
         version: link:../../packages/types
+      zod:
+        specifier: ^3.24.0
+        version: 3.25.76
     devDependencies:
+      '@types/node':
+        specifier: ^22.10.0
+        version: 22.20.1
+      tsx:
+        specifier: ^4.19.0
+        version: 4.23.12
       typescript:
         specifier: ^5.7.0
         version: 5.9.3
+      vitest:
+        specifier: ^2.1.0
+        version: 2.1.9(@types/node@22.20.1)(jsdom@30.0.1)(lightningcss@1.33.0)(supports-color@7.2.0)
 
 packages:
 

@@ -1,6 +1,6 @@
 # Architecture
 
-Status: Phase 3 — Investigation Command Center. This covers what exists
+Status: Phase 4 — Proactive Payment Intelligence. This covers what exists
 today. See [`docs/decisions`](../decisions) for the reasoning behind these
 choices, and [`AGENTS.md`](../../AGENTS.md) for the standing architecture
 principles.
@@ -293,6 +293,125 @@ renders `rootCause`/`confidence`/`businessImpact`/`evidence`/`hypotheses`
 exactly as the API returns them — the frontend never computes or alters a
 number. See the ADR for the follow-up-as-new-request and session-only
 history decisions.
+
+## Proactive Payment Intelligence (Phase 4)
+
+```
+Payment Data
+      │
+      ▼
+packages/detection: runDetectors()      — 5 deterministic detectors, no LLM
+      │                                    (PAYMENT_FAILURE_SPIKE,
+      │                                    PAYMENT_METHOD_DEGRADATION,
+      │                                    REFUND_SPIKE,
+      │                                    TRANSACTION_VOLUME_DECLINE,
+      │                                    HIGH_VALUE_TRANSACTION_DECLINE)
+      │
+      ▼
+DetectionResult[]  (ANOMALY | INSUFFICIENT_DATA, deterministic severity)
+      │
+      ▼
+packages/detection: runDetectionForMerchant()
+      │
+      ├─▶ fingerprint (type + dimension + UTC day) → find-or-create Issue
+      │     — dedup/update, never a duplicate active issue
+      │
+      ├─▶ severity capped at WARNING on first occurrence; only a
+      │     reconfirmed (2nd+ run) issue can reach CRITICAL
+      │
+      └─▶ for a newly-actionable issue only (storm prevention):
+              InvestigationRequest { question, context, timeRange }
+                    │
+                    ▼
+            packages/agent: runInvestigation()   — the EXACT, unmodified
+                    │                               Phase 2 engine
+                    ▼
+            InvestigationResult
+                    │
+                    ▼
+          Issue updated: status, rootCause, confidence,
+          estimatedImpactMinorUnits, cached investigationResult
+      │
+      ▼
+apps/api: GET /issues, GET /issues/:id     — merchant-scoped, paginated
+      │
+      ▼
+apps/web: Issues page + /issues/:id detail  — reuses Phase 3's ResultView/
+                                                EvidenceList/HypothesisList
+      │
+      ▼
+In-app notification (new issue / severity escalation, deduped per session)
+```
+
+Detection and investigation stay two separate responsibilities end to end:
+`packages/detection` never imports `@paysherlock/agent`, and
+`@paysherlock/agent`'s `runInvestigation` is called exactly as apps/api's
+`POST /investigations` already calls it — no second agent, planner, or
+hypothesis engine exists in this phase. See the ADR for the full reasoning
+behind the baseline methodology, severity/persistence policy, fingerprint
+design, and why the orchestration lives in `packages/detection` rather than
+`apps/api`.
+
+### Detection package (`packages/detection`)
+
+| Module         | Responsibility                                                                                                                                                                                 |
+| -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `baseline/`    | Comparable time-of-day windows (current + N preceding days) and change statistics.                                                                                                             |
+| `severity/`    | Deterministic INFO/WARNING/CRITICAL from magnitude + sample confidence + optional impact.                                                                                                      |
+| `fingerprint/` | `type:dimension:dayBucket` dedup key.                                                                                                                                                          |
+| `detectors/`   | The five detector implementations — each independently testable.                                                                                                                               |
+| `engine/`      | `runDetectors` (orchestrates all five) and `detectionRun.ts::runDetectionForMerchant` (the detect → issue → investigate pipeline, shared by apps/api's eval harness and workers/investigator). |
+
+### Issue model and lifecycle
+
+`Issue` (`packages/database/prisma/schema.prisma`) persists a detected
+anomaly and, once investigated, the triggering investigation's outcome —
+see the ADR for the full schema rationale. Lifecycle:
+
+```
+DETECTED → INVESTIGATING → IDENTIFIED
+                          → MONITORING        (investigated, no root cause found)
+         → INVESTIGATION_FAILED → INVESTIGATING (retried by a later run)
+active status* → RESOLVED   (auto: not reconfirmed within the staleness window)
+active status* → DISMISSED  (merchant-initiated, via dismissIssue)
+```
+
+\* any non-terminal status. Uniqueness among _active_ issues per
+`(merchantId, fingerprint)` is enforced in application code
+(`findActiveIssueByFingerprint`), not a DB constraint — a resolved/dismissed
+issue never blocks a fresh one from being created later under the same
+fingerprint.
+
+### Detection worker (`workers/investigator`)
+
+```
+pnpm --filter @paysherlock/investigator-worker run detect   — runs once, exits (manual/demo)
+pnpm --filter @paysherlock/investigator-worker run start    — runs immediately, then every
+                                                                DETECTION_INTERVAL_MS (default 15 min)
+```
+
+Resolves the single MVP merchant, builds an investigation runner the same
+way `apps/api`'s entrypoint does, and calls `runDetectionForMerchant` — a
+plain `setInterval` loop, no BullMQ/Redis/cloud scheduler.
+
+### API endpoints (Phase 4)
+
+| Endpoint          | Notes                                                                                                                           |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /issues`     | Merchant-scoped, cursor-paginated, newest-detected-first.                                                                       |
+| `GET /issues/:id` | Merchant-scoped lookup (`findFirst({id, merchantId})`, never a bare id lookup) — 404 if not found or owned by another merchant. |
+
+### Evaluation harness
+
+`apps/api/src/eval/` — the 8 required Phase 4 scenarios (A–H), run
+end-to-end against the real (unmodified) Phase 2 investigation engine and a
+synthetic in-memory database (`apps/api/src/eval/fakeDatabase.ts`, which
+extends `@paysherlock/agent`'s exported fake payment/refund database with a
+fake `issue` table). Scores detection recall, false-positive rate,
+duplicate-issue rate, investigation-trigger success, and root-cause
+accuracy — wired into `pnpm test` and runnable standalone via
+`pnpm --filter @paysherlock/api run eval:phase4`. Labeled explicitly as
+controlled synthetic evaluation, not real-world accuracy (brief section 36).
 
 ## Future agent tool foundation → now implemented
 

@@ -13,6 +13,7 @@ import { registerPaymentRoutes } from "./routes/payments.js";
 import { registerWebhookRoutes } from "./routes/webhooks.js";
 import { registerInvestigationRoutes } from "./routes/investigations.js";
 import { registerOverviewRoutes } from "./routes/overview.js";
+import { registerIssueRoutes } from "./routes/issues.js";
 
 export interface ServerDeps {
   db: Database;
@@ -56,6 +57,7 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
   registerWebhookRoutes(app, deps);
   registerInvestigationRoutes(app, deps);
   registerOverviewRoutes(app, deps);
+  registerIssueRoutes(app, deps);
 
   return app;
 }

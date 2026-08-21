@@ -42,6 +42,13 @@ export function createMockDb(): any {
       findUniqueOrThrow: vi.fn(),
       update: vi.fn(),
     },
+    issue: {
+      findFirst: vi.fn(),
+      findMany: vi.fn(),
+      create: vi.fn(),
+      update: vi.fn(),
+      updateMany: vi.fn(),
+    },
   };
 }
 

@@ -6,10 +6,12 @@ export * from "./upsert/order.js";
 export * from "./upsert/payment.js";
 export * from "./upsert/refund.js";
 export * from "./upsert/paymentEvent.js";
+export * from "./upsert/issue.js";
 
 export * from "./queries/pagination.js";
 export * from "./queries/payments.js";
 export * from "./queries/orders.js";
 export * from "./queries/refunds.js";
+export * from "./queries/issues.js";
 
 export * from "./analytics/index.js";

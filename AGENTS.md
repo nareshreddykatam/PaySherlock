@@ -14,19 +14,40 @@ apps/web           Merchant frontend — Investigation Command Center (Next.js)
 apps/api            Backend/API service
 packages/agent      AI agent runtime and orchestration
 packages/tools       Explicit typed tools the agent calls
+packages/detection  Deterministic anomaly detection engine (Phase 4)
 packages/razorpay   Razorpay integration adapter
 packages/database   Database client/schema layer (Prisma + PostgreSQL)
 packages/types       Shared TypeScript types
 packages/ui          Shared UI components
-workers/investigator Background investigation/processing worker (BullMQ)
+workers/investigator Detection worker — runs packages/detection on a schedule
 docs/                Architecture, product, and decision records
 scripts/             Repo-level scripts
 ```
 
 This is a pnpm + Turborepo monorepo. `packages/database`, `packages/razorpay`,
-`packages/types`, `packages/tools`, `packages/agent`, `apps/api`, and
-`apps/web` are implemented (Phases 0–3). `packages/ui` and
-`workers/investigator` are still placeholders.
+`packages/types`, `packages/tools`, `packages/agent`, `packages/detection`,
+`apps/api`, `apps/web`, and `workers/investigator` are implemented
+(Phases 0–4). `packages/ui` is still a placeholder.
+
+## Detection vs. investigation (Phase 4)
+
+- **Code decides whether something is anomalous; the LLM only ever explains
+  why.** `packages/detection`'s five detectors are 100% deterministic
+  (threshold comparisons on `aggregate`/`groupBy` results) and must never
+  import `@paysherlock/agent` or call an LLM. Do not add an LLM-based
+  "is this weird?" check anywhere in the detection path.
+- The detect → issue → investigate orchestration
+  (`packages/detection/src/engine/detectionRun.ts::runDetectionForMerchant`)
+  is the _only_ thing that triggers an investigation from a detected
+  anomaly, and it always calls the same `runInvestigation` function
+  `apps/api`'s `POST /investigations` route uses — never a second agent,
+  planner, or hypothesis engine.
+- `Issue` severity (INFO/WARNING/CRITICAL, computed in
+  `packages/detection/src/severity`) and an investigation's `confidence`
+  (low/medium/high, computed in `packages/agent/src/evidence/scorer.ts`)
+  are deliberately separate concepts — never collapse them into one number.
+- See [docs/decisions/0004](docs/decisions/0004-proactive-payment-intelligence.md)
+  for the full baseline/severity/fingerprint/lifecycle reasoning.
 
 ## Architecture Principles
 

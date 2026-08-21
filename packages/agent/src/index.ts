@@ -26,3 +26,10 @@ export * from "./runtime/loop.js";
 export * from "./runtime/agent.js";
 export * from "./runtime/runner.js";
 export * from "./runtime/snapshot.js";
+
+// Synthetic (non-real, non-customer) test infrastructure — exported so
+// other packages/apps' own evaluation harnesses (e.g. apps/api's Phase 4
+// proactive-flow evaluation) can build on the same fake database instead of
+// each hand-rolling a second one. See docs/decisions.
+export * from "./eval/fakeDatabase.js";
+export * from "./eval/generators.js";

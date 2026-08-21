@@ -9,12 +9,24 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "eslint .",
+    "test": "vitest run",
+    "dev": "tsx watch src/index.ts --watch",
+    "detect": "tsx src/index.ts",
+    "start": "node dist/index.js --watch",
     "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\""
   },
   "dependencies": {
-    "@paysherlock/types": "workspace:*"
+    "@paysherlock/agent": "workspace:*",
+    "@paysherlock/database": "workspace:*",
+    "@paysherlock/detection": "workspace:*",
+    "@paysherlock/tools": "workspace:*",
+    "@paysherlock/types": "workspace:*",
+    "zod": "^3.24.0"
   },
   "devDependencies": {
-    "typescript": "^5.7.0"
+    "@types/node": "^22.10.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0",
+    "vitest": "^2.1.0"
   }
 }

@@ -5,12 +5,15 @@ import type { ReactNode } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { Sidebar } from "./Sidebar";
 import { Header } from "./Header";
+import { NotificationCenter } from "@/components/notifications/NotificationCenter";
 
 export function AppShell({ children }: { children: ReactNode }) {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   return (
     <div className="flex h-dvh overflow-hidden bg-canvas text-ink">
+      <NotificationCenter />
+
       {/* Desktop: persistent sidebar. */}
       <Sidebar className="hidden w-60 shrink-0 lg:flex" />
 

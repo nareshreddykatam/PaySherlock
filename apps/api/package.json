@@ -13,11 +13,13 @@
     "dev": "tsx watch src/index.ts",
     "start": "node dist/index.js",
     "ingest": "tsx src/scripts/ingest.ts",
+    "eval:phase4": "tsx src/eval/cli.ts",
     "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\""
   },
   "dependencies": {
     "@paysherlock/agent": "workspace:*",
     "@paysherlock/database": "workspace:*",
+    "@paysherlock/detection": "workspace:*",
     "@paysherlock/razorpay": "workspace:*",
     "@paysherlock/tools": "workspace:*",
     "@paysherlock/types": "workspace:*",
