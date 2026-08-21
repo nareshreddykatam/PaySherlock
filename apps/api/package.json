@@ -9,12 +9,23 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "eslint .",
+    "test": "vitest run",
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/index.js",
+    "ingest": "tsx src/scripts/ingest.ts",
     "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\""
   },
   "dependencies": {
-    "@paysherlock/types": "workspace:*"
+    "@paysherlock/database": "workspace:*",
+    "@paysherlock/razorpay": "workspace:*",
+    "@paysherlock/types": "workspace:*",
+    "fastify": "^5.1.0",
+    "zod": "^3.24.0"
   },
   "devDependencies": {
-    "typescript": "^5.7.0"
+    "@types/node": "^22.10.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0",
+    "vitest": "^2.1.0"
   }
 }

@@ -1,4 +1,5 @@
 # Architecture Decision Records (ADRs)
 
-Placeholder. Significant technical decisions (and the reasoning behind them)
-will be recorded here as individual ADR files, e.g. `0001-monorepo-tooling.md`.
+Significant technical decisions, and the reasoning behind them.
+
+- [0001 — Payment Data & Razorpay Foundation](./0001-payment-data-foundation.md)

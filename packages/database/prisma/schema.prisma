@@ -1,0 +1,214 @@
+// PaySherlock database schema — Phase 1 foundation.
+//
+// Scope: normalized internal representations of Razorpay payment data,
+// sufficient for the future AI agent to query. This is deliberately NOT a
+// 1:1 copy of Razorpay's API/webhook shapes — see docs/decisions for the
+// normalization and money-representation rationale.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+/// A merchant account connected to PaySherlock. Single-tenant for the MVP,
+/// but modeled as a first-class entity so multi-merchant support doesn't
+/// require a schema rewrite later.
+model Merchant {
+  id                 String   @id @default(cuid())
+  name               String
+  /// Razorpay's `account_id`, as seen on webhook payloads. Nullable because
+  /// it's only known once the first webhook/API call from that account
+  /// arrives.
+  razorpayAccountId  String?  @unique
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  orders      Order[]
+  payments    Payment[]
+  refunds     Refund[]
+  settlements Settlement[]
+
+  @@map("merchants")
+}
+
+enum OrderStatus {
+  CREATED
+  ATTEMPTED
+  PAID
+}
+
+/// Normalized Razorpay Order.
+model Order {
+  id               String      @id @default(cuid())
+  merchant         Merchant    @relation(fields: [merchantId], references: [id])
+  merchantId       String
+  /// Razorpay's `order_xxx` id — the external source of truth.
+  razorpayOrderId  String      @unique
+  /// Integer minor units (paise for INR) — never a float. See ADR on money.
+  amount           Int
+  amountPaid       Int         @default(0)
+  amountDue        Int         @default(0)
+  currency         String      @default("INR")
+  status           OrderStatus @default(CREATED)
+  receipt          String?
+  attempts         Int         @default(0)
+  notes            Json?
+  /// Full source payload as last observed, preserved for audit/investigation.
+  raw              Json
+  razorpayCreatedAt DateTime
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
+
+  payments Payment[]
+
+  @@index([merchantId, status])
+  @@map("orders")
+}
+
+enum PaymentStatus {
+  CREATED
+  AUTHORIZED
+  CAPTURED
+  REFUNDED
+  FAILED
+}
+
+enum PaymentMethod {
+  CARD
+  NETBANKING
+  WALLET
+  UPI
+  EMI
+  OTHER
+}
+
+/// Normalized Razorpay Payment — the central entity future investigations
+/// query and reason about.
+model Payment {
+  id                  String        @id @default(cuid())
+  merchant            Merchant      @relation(fields: [merchantId], references: [id])
+  merchantId          String
+  /// Razorpay's `pay_xxx` id — the external source of truth.
+  razorpayPaymentId   String        @unique
+  order               Order?        @relation(fields: [orderId], references: [id])
+  orderId             String?
+  /// Kept even when `orderId` is null so we can backfill the relation once
+  /// the order is ingested (payment webhooks can arrive before order data).
+  razorpayOrderId     String?
+  amount              Int
+  amountRefunded      Int           @default(0)
+  currency            String        @default("INR")
+  status              PaymentStatus
+  method              PaymentMethod
+  captured            Boolean       @default(false)
+  international       Boolean       @default(false)
+  email               String?
+  contact             String?
+  errorCode           String?
+  errorDescription    String?
+  notes               Json?
+  raw                 Json
+  razorpayCreatedAt   DateTime
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
+
+  refunds       Refund[]
+  paymentEvents PaymentEvent[]
+
+  @@index([merchantId, status])
+  @@index([merchantId, razorpayCreatedAt])
+  @@index([method])
+  @@map("payments")
+}
+
+enum RefundStatus {
+  PENDING
+  PROCESSED
+  FAILED
+}
+
+/// Normalized Razorpay Refund.
+model Refund {
+  id                 String       @id @default(cuid())
+  merchant           Merchant     @relation(fields: [merchantId], references: [id])
+  merchantId         String
+  /// Razorpay's `rfnd_xxx` id — the external source of truth.
+  razorpayRefundId   String       @unique
+  payment            Payment      @relation(fields: [paymentId], references: [id])
+  paymentId          String
+  /// Kept for direct lookups/debugging without a join.
+  razorpayPaymentId  String
+  amount             Int
+  currency           String       @default("INR")
+  status             RefundStatus
+  speedProcessed     String?
+  speedRequested     String?
+  notes              Json?
+  raw                Json
+  razorpayCreatedAt  DateTime
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
+
+  @@index([paymentId])
+  @@map("refunds")
+}
+
+enum PaymentEventProcessingStatus {
+  RECEIVED
+  PROCESSED
+  IGNORED
+  FAILED
+}
+
+/// Normalized, deduplicated log of inbound Razorpay webhook events. This is
+/// both the idempotency ledger (unique on `externalEventId`) and the audit
+/// trail for investigating webhook processing after the fact.
+model PaymentEvent {
+  id                 String                        @id @default(cuid())
+  /// Razorpay's `x-razorpay-event-id` header value — unique per delivery,
+  /// the basis for idempotent processing. See docs/decisions for rationale.
+  externalEventId    String                        @unique
+  /// e.g. "payment.captured", "order.paid", "refund.processed".
+  eventType          String
+  provider           String                        @default("razorpay")
+  /// e.g. "payment", "order", "refund".
+  resourceType       String
+  /// The Razorpay id of the affected resource, e.g. "pay_xxx".
+  resourceId         String
+  occurredAt         DateTime
+  /// The full normalized webhook payload, preserved for audit/investigation.
+  payload            Json
+  processingStatus   PaymentEventProcessingStatus @default(RECEIVED)
+  errorMessage       String?
+  payment            Payment?                      @relation(fields: [paymentId], references: [id])
+  paymentId          String?
+  createdAt          DateTime                      @default(now())
+  updatedAt          DateTime                      @updatedAt
+
+  @@index([eventType])
+  @@index([resourceType, resourceId])
+  @@map("payment_events")
+}
+
+/// Normalized Razorpay Settlement. Schema only in Phase 1 — no
+/// ingestion/webhook wiring yet (see docs/decisions for scope rationale).
+model Settlement {
+  id                     String   @id @default(cuid())
+  merchant               Merchant @relation(fields: [merchantId], references: [id])
+  merchantId             String
+  /// Razorpay's `setl_xxx` id — the external source of truth.
+  razorpaySettlementId   String   @unique
+  amount                 Int
+  status                 String
+  utr                    String?
+  raw                    Json
+  settledAt              DateTime?
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  @@map("settlements")
+}

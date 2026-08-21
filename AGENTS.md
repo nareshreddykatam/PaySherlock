@@ -58,6 +58,11 @@ placeholders — no business logic has been implemented.
 - Don't add abstractions, config options, or error handling for cases that
   can't happen. Keep changes scoped to what's asked.
 - Format with Prettier, lint with ESLint (flat config, `eslint.config.js`).
+- `apps/api` uses Fastify; input validation uses zod. Database access goes
+  through `packages/database`'s query/upsert functions, which accept a
+  `Database` client as a parameter (never a module-level singleton) so
+  they're testable without a live Postgres — see
+  [docs/decisions/0001](docs/decisions/0001-payment-data-foundation.md).
 
 ## Security Requirements
 
@@ -77,10 +82,13 @@ placeholders — no business logic has been implemented.
 
 ## Testing Expectations
 
-- New logic should be accompanied by unit tests once real implementation
-  begins (Phase 1+).
+- Tests run with Vitest (`pnpm test`, per-package `vitest.config.ts`). New
+  logic should be accompanied by unit tests.
 - Razorpay adapter code requires tests against mocked/sandboxed responses,
-  never live financial calls.
+  never live financial calls (mock `fetch`, never hit `api.razorpay.com` in
+  tests).
+- Database query/upsert functions are tested against a mocked `Database`
+  client, not a live Postgres (no Postgres is provisioned for this repo yet).
 - Agent/tool code requires tests that assert on tool inputs/outputs, not on
   raw model output.
 

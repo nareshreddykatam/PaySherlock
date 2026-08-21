@@ -6,12 +6,24 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "scripts": {
-    "build": "tsc -p tsconfig.json",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "build": "prisma generate && tsc -p tsconfig.json",
+    "typecheck": "prisma generate && tsc -p tsconfig.json --noEmit",
     "lint": "eslint .",
-    "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\""
+    "test": "prisma generate && vitest run",
+    "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
+    "db:generate": "prisma generate",
+    "db:migrate:dev": "prisma migrate dev",
+    "db:migrate:deploy": "prisma migrate deploy",
+    "db:studio": "prisma studio"
+  },
+  "dependencies": {
+    "@paysherlock/types": "workspace:*",
+    "@prisma/client": "^6.1.0"
   },
   "devDependencies": {
-    "typescript": "^5.7.0"
+    "@types/node": "^22.10.0",
+    "prisma": "^6.1.0",
+    "typescript": "^5.7.0",
+    "vitest": "^2.1.0"
   }
 }

@@ -4,12 +4,14 @@
 
 > Built for the Razorpay Buildathon — Open Track
 
-## Status: Phase 0 — Foundation
+## Status: Phase 1 — Payment Data & Razorpay Foundation
 
-This repository currently contains only the project foundation (monorepo
-tooling, structure, and conventions). **No product features are implemented
-yet** — no payment integration, no AI investigation logic, no dashboard, no
-database models. See [Development Status](#development-status) below.
+Phase 0 (monorepo tooling, structure, conventions) is complete. Phase 1 adds
+the Razorpay Test Mode integration and normalized payment data layer this
+project's future investigations will run on. **The AI agent, dashboard, and
+any financial actions are not implemented yet.** See
+[Development Status](#development-status) below and
+[docs/architecture](docs/architecture) for details.
 
 ## Problem
 
@@ -78,39 +80,50 @@ conclusions are backed by structured evidence. Full details in
 ## Development Status
 
 - [x] Monorepo structure, pnpm workspace, Turborepo, TypeScript, lint/format
-- [ ] Database schema
-- [ ] Razorpay adapter
+- [x] Database schema (PostgreSQL + Prisma) — `Merchant`, `Order`, `Payment`, `Refund`, `PaymentEvent`, `Settlement`
+- [x] Razorpay adapter (payments/orders/refunds, Test Mode, read-only) + webhook signature verification
+- [x] Idempotent payment ingestion (API pull + webhook push)
+- [x] Read-only payment API (`/health`, `/payments`, `/payments/:id`)
 - [ ] Agent runtime and tools
 - [ ] Merchant dashboard
 - [ ] Financial safety / guardrail system
-- [ ] Audit logging
+- [ ] Full audit logging (webhook processing is audited today; there's no agent yet to audit)
 
 ### Local Setup
 
 ```bash
 pnpm install
+cp .env.example .env   # fill in Test Mode Razorpay keys + a Postgres DATABASE_URL
+pnpm --filter @paysherlock/database run db:migrate:dev
 ```
 
-Working now: `pnpm build`, `pnpm lint`, `pnpm typecheck` (run across the
-placeholder packages via Turborepo).
+Working: `pnpm build`, `pnpm lint`, `pnpm typecheck`, `pnpm format:check`,
+`pnpm test` (Razorpay adapter, database layer, and API — run via Turborepo).
 
-Not yet functional: `pnpm dev` (no app currently defines a `dev` script) and
-`pnpm test` (no test suites exist yet). Both are wired up at the root and
-will activate automatically once packages implement the corresponding
-scripts.
+`pnpm --filter @paysherlock/api run dev` starts the API on `PORT` (default
+`4000`). `pnpm --filter @paysherlock/api run ingest` pulls recent payments
+from Razorpay Test Mode into Postgres — safe to run repeatedly, every write
+is an idempotent upsert.
+
+Not yet functional: the root `pnpm dev` (no `apps/web` yet — see
+[apps/web/README.md](apps/web/README.md)).
 
 ## Security Note
 
-This project handles financial data and, eventually, payment provider
-credentials. Secrets are never committed — see `.env.example` for the
-required environment variables and `AGENTS.md` for the full security and
-financial-safety requirements. No AI-initiated financial action will ever
-execute without an explicit merchant approval step.
+This project handles financial data and payment provider credentials.
+Razorpay is used in **Test Mode only** — never live/production credentials.
+Secrets are never committed — see `.env.example` for the required
+environment variables and `AGENTS.md` for the full security and
+financial-safety requirements. All Razorpay API calls happen server-side;
+webhook signatures are verified before any data is processed. No
+AI-initiated financial action will ever execute without an explicit
+merchant approval step (no such action exists yet — see Development Status).
 
 ## Roadmap
 
-1. **Phase 0 — Foundation** _(current)_: monorepo, tooling, conventions.
-2. **Phase 1**: database schema, Razorpay adapter (read-only), basic API.
+1. **Phase 0 — Foundation** _(done)_: monorepo, tooling, conventions.
+2. **Phase 1 — Payment Data & Razorpay Foundation** _(current)_: database
+   schema, Razorpay adapter (read-only), webhook ingestion, basic API.
 3. **Phase 2**: agent runtime, first tools, investigation flow (read-only).
 4. **Phase 3**: merchant dashboard, evidence/investigation UI.
 5. **Phase 4**: guardrails, approvals, bounded actions, audit logging.
