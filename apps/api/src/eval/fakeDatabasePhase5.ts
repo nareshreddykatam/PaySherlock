@@ -67,6 +67,8 @@ export function createPhase5FakeDatabase(
   const actions: Record<string, any>[] = [];
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const auditEvents: Record<string, any>[] = [];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const issues: Record<string, any>[] = [];
   let recCounter = 0;
   let actionCounter = 0;
   let auditCounter = 0;
@@ -75,6 +77,14 @@ export function createPhase5FakeDatabase(
     payment: {
       findUnique: ({ where }: { where: { id: string } }) =>
         Promise.resolve(paymentsById.get(where.id) ?? null),
+      findFirst: ({ where }: { where: { id?: string; merchantId?: string } }) => {
+        const row = where.id !== undefined ? paymentsById.get(where.id) : undefined;
+        if (!row) return Promise.resolve(null);
+        if (where.merchantId !== undefined && row.merchantId !== where.merchantId) {
+          return Promise.resolve(null);
+        }
+        return Promise.resolve(row);
+      },
     },
     recommendation: {
       findFirst: ({ where }: { where: WhereClause }) =>
@@ -127,9 +137,13 @@ export function createPhase5FakeDatabase(
     action: {
       findFirst: ({ where }: { where: WhereClause }) =>
         Promise.resolve(actions.find((row) => matchesWhere(row, where)) ?? null),
-      findUnique: ({ where }: { where: { recommendationId: string } }) =>
+      findUnique: ({ where }: { where: { id?: string; recommendationId?: string } }) =>
         Promise.resolve(
-          actions.find((row) => row.recommendationId === where.recommendationId) ?? null,
+          actions.find((row) =>
+            where.id !== undefined
+              ? row.id === where.id
+              : row.recommendationId === where.recommendationId,
+          ) ?? null,
         ),
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       create: ({ data }: { data: Record<string, any> }) => {
@@ -161,6 +175,16 @@ export function createPhase5FakeDatabase(
         Object.assign(row, data, { updatedAt: clock() });
         return Promise.resolve(row);
       },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      updateMany: ({ where, data }: { where: WhereClause; data: Record<string, any> }) => {
+        let count = 0;
+        for (const row of actions) {
+          if (!matchesWhere(row, where)) continue;
+          Object.assign(row, data, { updatedAt: clock() });
+          count += 1;
+        }
+        return Promise.resolve({ count });
+      },
     },
     auditEvent: {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -172,8 +196,20 @@ export function createPhase5FakeDatabase(
       },
       findMany: () => Promise.resolve([...auditEvents]),
     },
-    // Test-only accessor — never part of the real Database shape.
+    // Minimal, read-only — just enough for the cross-merchant isolation
+    // scenario (Phase 6 brief section 5, scenario L) to verify an Issue
+    // seeded for one merchant is never returned for another.
+    issue: {
+      findFirst: ({ where }: { where: WhereClause }) =>
+        Promise.resolve(issues.find((row) => matchesWhere(row, where)) ?? null),
+    },
+    // Test-only accessors — never part of the real Database shape.
     __auditEvents: auditEvents,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    __seedIssue: (row: Record<string, any>) => {
+      issues.push({ id: `fake-issue-${issues.length + 1}`, ...row });
+      return issues[issues.length - 1];
+    },
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
   } as any;
 }

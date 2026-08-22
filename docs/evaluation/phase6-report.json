@@ -1,0 +1,224 @@
+{
+  "generatedAt": "2026-08-22T14:35:18.713Z",
+  "gitCommit": "772ec131491408ecbc0ff388e85feba4ba1762e0",
+  "environment": {
+    "mode": "synthetic",
+    "aiProvider": "deterministic",
+    "razorpay": "mocked",
+    "database": "in-memory fake (no live Postgres)",
+    "nodeVersion": "v24.18.1"
+  },
+  "scenarios": [
+    {
+      "id": "A",
+      "name": "Healthy merchant",
+      "category": "detection",
+      "passed": true,
+      "notes": [],
+      "details": {
+        "issuesCreated": 0,
+        "investigationsTriggered": 0,
+        "investigationsFailed": 0,
+        "issueTypes": [],
+        "issueStatuses": [],
+        "rootCauses": []
+      }
+    },
+    {
+      "id": "B",
+      "name": "UPI degradation",
+      "category": "detection",
+      "passed": true,
+      "notes": [
+        "business impact computed for 2/2 issue(s)",
+        "no financial action occurred automatically (Phase 6 hard requirement)"
+      ],
+      "details": {
+        "issuesCreated": 2,
+        "investigationsTriggered": 2,
+        "investigationsFailed": 0,
+        "issueTypes": ["PAYMENT_FAILURE_SPIKE", "PAYMENT_METHOD_DEGRADATION"],
+        "issueStatuses": ["IDENTIFIED", "IDENTIFIED"],
+        "rootCauses": [
+          "UPI payment failure rate increased significantly",
+          "UPI payment failure rate increased significantly"
+        ]
+      }
+    },
+    {
+      "id": "C",
+      "name": "Payment failure spike",
+      "category": "detection",
+      "passed": true,
+      "notes": [
+        "business impact computed for 0/4 issue(s)",
+        "no financial action occurred automatically (Phase 6 hard requirement)"
+      ],
+      "details": {
+        "issuesCreated": 4,
+        "investigationsTriggered": 4,
+        "investigationsFailed": 0,
+        "issueTypes": [
+          "PAYMENT_FAILURE_SPIKE",
+          "PAYMENT_METHOD_DEGRADATION",
+          "PAYMENT_METHOD_DEGRADATION",
+          "PAYMENT_METHOD_DEGRADATION"
+        ],
+        "issueStatuses": ["MONITORING", "MONITORING", "MONITORING", "MONITORING"],
+        "rootCauses": []
+      }
+    },
+    {
+      "id": "D",
+      "name": "Refund spike",
+      "category": "detection",
+      "passed": true,
+      "notes": [
+        "business impact computed for 1/1 issue(s)",
+        "no financial action occurred automatically (Phase 6 hard requirement)"
+      ],
+      "details": {
+        "issuesCreated": 1,
+        "investigationsTriggered": 1,
+        "investigationsFailed": 0,
+        "issueTypes": ["REFUND_SPIKE"],
+        "issueStatuses": ["IDENTIFIED"],
+        "rootCauses": ["Refund volume/amount increased significantly"]
+      }
+    },
+    {
+      "id": "E",
+      "name": "Transaction volume decline",
+      "category": "detection",
+      "passed": true,
+      "notes": [
+        "business impact computed for 0/2 issue(s)",
+        "no financial action occurred automatically (Phase 6 hard requirement)"
+      ],
+      "details": {
+        "issuesCreated": 2,
+        "investigationsTriggered": 2,
+        "investigationsFailed": 0,
+        "issueTypes": ["TRANSACTION_VOLUME_DECLINE", "HIGH_VALUE_TRANSACTION_DECLINE"],
+        "issueStatuses": ["MONITORING", "MONITORING"],
+        "rootCauses": []
+      }
+    },
+    {
+      "id": "F",
+      "name": "High-value transaction decline",
+      "category": "detection",
+      "passed": true,
+      "notes": [
+        "business impact computed for 1/2 issue(s)",
+        "no financial action occurred automatically (Phase 6 hard requirement)"
+      ],
+      "details": {
+        "issuesCreated": 2,
+        "investigationsTriggered": 1,
+        "investigationsFailed": 0,
+        "issueTypes": ["TRANSACTION_VOLUME_DECLINE", "HIGH_VALUE_TRANSACTION_DECLINE"],
+        "issueStatuses": ["DETECTED", "IDENTIFIED"],
+        "rootCauses": [
+          "High-value transaction volume declined disproportionately vs. smaller transactions"
+        ]
+      }
+    },
+    {
+      "id": "G",
+      "name": "Valid guarded refund",
+      "category": "action",
+      "passed": true,
+      "notes": ["exactly one refund action executed"],
+      "details": {
+        "outcome": "ok"
+      }
+    },
+    {
+      "id": "H",
+      "name": "Double approval",
+      "category": "action",
+      "passed": true,
+      "notes": ["1 of 2 concurrent approvals succeeded", "1 provider call(s) made"],
+      "details": {
+        "outcomes": ["ok", "conflict"]
+      }
+    },
+    {
+      "id": "I",
+      "name": "Stale refund state",
+      "category": "action",
+      "passed": true,
+      "notes": ["execution blocked before any provider call — live state re-validated"],
+      "details": {
+        "errorCode": "NOT_ELIGIBLE"
+      }
+    },
+    {
+      "id": "J",
+      "name": "Provider failure",
+      "category": "action",
+      "passed": true,
+      "notes": ["action FAILED, audit event recorded, error message contained no stack trace"],
+      "details": {
+        "auditTypes": ["RECOMMENDATION_APPROVED", "ACTION_STARTED", "ACTION_FAILED"]
+      }
+    },
+    {
+      "id": "K",
+      "name": "Retry after provider failure",
+      "category": "action",
+      "passed": true,
+      "notes": ["retry reused the same idempotency key and reached SUCCEEDED"],
+      "details": {
+        "idempotencyKeys": ["paysherlock-refund-fake-rec-1", "paysherlock-refund-fake-rec-1"]
+      }
+    },
+    {
+      "id": "L",
+      "name": "Cross-merchant isolation",
+      "category": "security",
+      "passed": true,
+      "notes": [
+        "recommendation blocked for other merchant: true",
+        "action blocked for other merchant: true",
+        "issue blocked for other merchant: true"
+      ],
+      "details": {}
+    }
+  ],
+  "metrics": {
+    "detection": {
+      "recall": 1,
+      "falsePositiveRate": 0,
+      "duplicateIssueRate": "unavailable"
+    },
+    "investigation": {
+      "triggerSuccessRate": 1,
+      "rootCauseAccuracy": 0.6,
+      "evidenceAccuracy": "unavailable"
+    },
+    "actions": {
+      "approvalSuccessRate": 1,
+      "duplicateExecutionRate": 0,
+      "staleStateRejectionRate": 1,
+      "actionSuccessRate": 1,
+      "falseSuccessRate": 0
+    },
+    "reliability": {
+      "unhandledExceptions": 0,
+      "failedRequests": "unavailable",
+      "retryCorrectness": "pass"
+    },
+    "security": {
+      "crossMerchantAccessFailuresBlocked": 3,
+      "approvalBypassAttemptsBlocked": 1
+    }
+  },
+  "limitations": [
+    "All data is synthetic; no live Postgres or live Razorpay Test Mode was used.",
+    "Detection precision/recall are computed over this harness's own small scenario set, not real merchant traffic — not a production accuracy claim.",
+    "evidenceAccuracy and failedRequests are not measured by this harness (no independent ground truth / no real HTTP layer involved) and are reported as unavailable rather than fabricated.",
+    "duplicateIssueRate is exercised by the separate Phase 4 evaluation harness (multi-run scenarios), not re-measured here to avoid duplicating that harness's logic."
+  ]
+}

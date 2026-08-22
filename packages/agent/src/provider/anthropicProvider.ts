@@ -8,9 +8,15 @@ export interface AnthropicProviderConfig {
   model: string;
   /** Override for tests; defaults to the real Anthropic API. */
   baseUrl?: string;
+  /** Aborts a request that hasn't completed within this many
+   * milliseconds — a hung provider call must never hang the investigation
+   * (and the HTTP request waiting on it) forever. Default 30s: generous
+   * enough for a real model call, but bounded. */
+  timeoutMs?: number;
 }
 
 const DEFAULT_BASE_URL = "https://api.anthropic.com/v1";
+const DEFAULT_TIMEOUT_MS = 30_000;
 const ANTHROPIC_VERSION = "2023-06-01";
 const MAX_TOKENS = 1536;
 
@@ -39,6 +45,7 @@ export class AnthropicProvider implements LLMProvider {
   private readonly apiKey: string;
   private readonly model: string;
   private readonly baseUrl: string;
+  private readonly timeoutMs: number;
 
   constructor(config: AnthropicProviderConfig) {
     if (!config.apiKey) throw new AgentError("AnthropicProvider requires an API key");
@@ -46,6 +53,7 @@ export class AnthropicProvider implements LLMProvider {
     this.apiKey = config.apiKey;
     this.model = config.model;
     this.baseUrl = config.baseUrl ?? DEFAULT_BASE_URL;
+    this.timeoutMs = config.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   }
 
   private async callWithForcedTool<T>(params: {
@@ -55,6 +63,8 @@ export class AnthropicProvider implements LLMProvider {
     toolDescription: string;
     inputSchema: Record<string, unknown>;
   }): Promise<T> {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), this.timeoutMs);
     let response: Response;
     try {
       response = await fetch(`${this.baseUrl}/messages`, {
@@ -78,9 +88,17 @@ export class AnthropicProvider implements LLMProvider {
           ],
           tool_choice: { type: "tool", name: params.toolName },
         }),
+        signal: controller.signal,
       });
     } catch (cause) {
+      if (cause instanceof Error && cause.name === "AbortError") {
+        throw new AgentError(`Anthropic API request timed out after ${this.timeoutMs}ms`, {
+          cause,
+        });
+      }
       throw new AgentError("Network error calling the Anthropic API", { cause });
+    } finally {
+      clearTimeout(timer);
     }
 
     if (!response.ok) {

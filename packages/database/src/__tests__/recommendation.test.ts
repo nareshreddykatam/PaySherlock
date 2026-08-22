@@ -117,6 +117,40 @@ describe("approveRecommendation", () => {
     });
     expect(result.outcome).toBe("not_found");
   });
+
+  it("refuses EXPIRED -> APPROVED — an already-expired recommendation stays rejected as a conflict, never silently re-approved", async () => {
+    const db = createMockDb();
+    db.recommendation.updateMany.mockResolvedValue({ count: 0 });
+    db.recommendation.findFirst.mockResolvedValue({
+      id: RECOMMENDATION_ID,
+      status: "EXPIRED",
+      expiresAt: new Date(Date.now() - 1000),
+    });
+
+    const result = await approveRecommendation(db, {
+      id: RECOMMENDATION_ID,
+      merchantId: MERCHANT_ID,
+    });
+
+    expect(result.outcome).toBe("conflict");
+    expect(db.recommendation.update).not.toHaveBeenCalled();
+  });
+
+  it("refuses SUCCEEDED -> APPROVED — a completed recommendation can never be re-approved", async () => {
+    const db = createMockDb();
+    db.recommendation.updateMany.mockResolvedValue({ count: 0 });
+    db.recommendation.findFirst.mockResolvedValue({
+      id: RECOMMENDATION_ID,
+      status: "SUCCEEDED",
+      expiresAt: null,
+    });
+
+    const result = await approveRecommendation(db, {
+      id: RECOMMENDATION_ID,
+      merchantId: MERCHANT_ID,
+    });
+    expect(result.outcome).toBe("conflict");
+  });
 });
 
 describe("rejectRecommendation", () => {

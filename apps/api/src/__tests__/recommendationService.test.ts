@@ -44,7 +44,7 @@ describe("generateRecommendationForInvestigation", () => {
 
   it("produces a PENDING_APPROVAL REFUND_PAYMENT recommendation for a refundable target payment", async () => {
     const db = createMockDb();
-    db.payment.findUnique.mockResolvedValue(paymentRowFixture);
+    db.payment.findFirst.mockResolvedValue(paymentRowFixture);
     db.recommendation.create.mockImplementation(({ data }: { data: Record<string, unknown> }) =>
       Promise.resolve({
         id: "rec-1",
@@ -77,7 +77,7 @@ describe("generateRecommendationForInvestigation", () => {
 
   it("falls back to NO_ACTION when the investigation found no root cause, even with a target payment", async () => {
     const db = createMockDb();
-    db.payment.findUnique.mockResolvedValue(paymentRowFixture);
+    db.payment.findFirst.mockResolvedValue(paymentRowFixture);
     db.recommendation.create.mockImplementation(({ data }: { data: Record<string, unknown> }) =>
       Promise.resolve({ id: "rec-1", createdAt: new Date(), updatedAt: new Date(), ...data }),
     );
@@ -97,10 +97,12 @@ describe("generateRecommendationForInvestigation", () => {
 
   it("falls back to NO_ACTION when the target payment does not belong to this merchant", async () => {
     const db = createMockDb();
-    db.payment.findUnique.mockResolvedValue({
-      ...paymentRowFixture,
-      merchantId: "different-merchant",
-    });
+    // The lookup is scoped by merchantId at the query level (never
+    // fetch-then-check), so a cross-merchant payment simply never
+    // matches — modeled here as the mock resolving null, exactly as a
+    // real `WHERE id = ... AND merchantId = ...` would for another
+    // merchant's row.
+    db.payment.findFirst.mockResolvedValue(null);
     db.recommendation.create.mockImplementation(({ data }: { data: Record<string, unknown> }) =>
       Promise.resolve({ id: "rec-1", createdAt: new Date(), updatedAt: new Date(), ...data }),
     );
@@ -120,7 +122,7 @@ describe("generateRecommendationForInvestigation", () => {
 
   it("falls back to NO_ACTION when the target payment has already been fully refunded", async () => {
     const db = createMockDb();
-    db.payment.findUnique.mockResolvedValue({
+    db.payment.findFirst.mockResolvedValue({
       ...paymentRowFixture,
       amountRefunded: paymentRowFixture.amount,
     });

@@ -14,6 +14,7 @@
     "start": "node dist/index.js",
     "ingest": "tsx src/scripts/ingest.ts",
     "eval:phase4": "tsx src/eval/cli.ts",
+    "eval:phase6": "tsx src/eval/cli6.ts",
     "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\""
   },
   "dependencies": {

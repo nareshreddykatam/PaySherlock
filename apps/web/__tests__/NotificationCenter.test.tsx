@@ -81,6 +81,32 @@ describe("NotificationCenter", () => {
     expect(screen.queryByText("PaySherlock found something unusual")).toBeNull();
   });
 
+  it("clears its poll interval and pending auto-dismiss timers on unmount — no update-after-unmount", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    getIssuesMock.mockResolvedValueOnce({ data: [], nextCursor: null });
+    const { unmount } = render(<NotificationCenter />);
+    await vi.waitFor(() => expect(getIssuesMock).toHaveBeenCalledTimes(1));
+
+    // A new issue arrives, scheduling an auto-dismiss timer for it.
+    getIssuesMock.mockResolvedValueOnce({ data: [issue()], nextCursor: null });
+    await vi.advanceTimersByTimeAsync(30_000);
+    await vi.waitFor(() =>
+      expect(screen.getByText("PaySherlock found something unusual")).toBeInTheDocument(),
+    );
+
+    unmount();
+    // Advance well past both the poll interval and the auto-dismiss delay —
+    // if either timer weren't cleared, this would call setState on an
+    // unmounted component.
+    await vi.advanceTimersByTimeAsync(60_000);
+
+    const unmountedUpdateWarning = errorSpy.mock.calls.some((call) =>
+      String(call[0]).includes("unmounted component"),
+    );
+    expect(unmountedUpdateWarning).toBe(false);
+    errorSpy.mockRestore();
+  });
+
   it("notifies again when a known issue's severity escalates", async () => {
     getIssuesMock.mockResolvedValueOnce({
       data: [issue({ severity: "WARNING" })],

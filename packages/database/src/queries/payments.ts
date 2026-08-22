@@ -21,13 +21,19 @@ export async function listPayments(
   return toPage(rows, limit);
 }
 
-/** Foundation for the future agent tool `get_payment_details()`. */
-export async function getPaymentById(db: Database, id: string) {
-  return db.payment.findUnique({ where: { id } });
+/** Foundation for the future agent tool `get_payment_details()`. Scoped by
+ * `merchantId` at the query level — never fetch-then-check — so a payment
+ * belonging to a different merchant is indistinguishable from "not found". */
+export async function getPaymentById(db: Database, id: string, merchantId: string) {
+  return db.payment.findFirst({ where: { id, merchantId } });
 }
 
-export async function getPaymentByRazorpayId(db: Database, razorpayPaymentId: string) {
-  return db.payment.findUnique({ where: { razorpayPaymentId } });
+export async function getPaymentByRazorpayId(
+  db: Database,
+  razorpayPaymentId: string,
+  merchantId: string,
+) {
+  return db.payment.findFirst({ where: { razorpayPaymentId, merchantId } });
 }
 
 /** Foundation for the future agent tool `get_payment_failures()`. */

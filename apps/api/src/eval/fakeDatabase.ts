@@ -69,6 +69,9 @@ export function createPhase4FakeDatabase(
     findFirst: ({ where }: { where: WhereClause }) => {
       return Promise.resolve(issues.find((row) => matchesWhere(row, where)) ?? null);
     },
+    findUnique: ({ where }: { where: { id: string } }) => {
+      return Promise.resolve(issues.find((row) => row.id === where.id) ?? null);
+    },
     findMany: ({ where, take }: { where?: WhereClause; take?: number }) => {
       let rows = issues.filter((row) => matchesWhere(row, where ?? {}));
       rows = [...rows].sort((a, b) => b.detectedAt.getTime() - a.detectedAt.getTime());

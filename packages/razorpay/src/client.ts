@@ -22,6 +22,11 @@ export interface RazorpayClientConfig {
   keySecret: string;
   /** Override for tests; defaults to the real Razorpay API. */
   baseUrl?: string;
+  /** Aborts a request that hasn't completed within this many milliseconds
+   * — a hung Razorpay call must never hang the request that's waiting on
+   * it forever (Phase 6 reliability hardening). Default 10s; overridable
+   * per client instance, e.g. for a slower network in tests. */
+  timeoutMs?: number;
 }
 
 export interface RazorpayListParams {
@@ -34,6 +39,7 @@ export interface RazorpayListParams {
 }
 
 const DEFAULT_BASE_URL = "https://api.razorpay.com/v1";
+const DEFAULT_TIMEOUT_MS = 10_000;
 
 /** Razorpay's own idempotency-key constraint for the refund endpoints
  * (`X-Refund-Idempotency`): at least 10 characters, alphanumeric plus
@@ -60,6 +66,7 @@ export class RazorpayClient {
   private readonly keyId: string;
   private readonly keySecret: string;
   private readonly baseUrl: string;
+  private readonly timeoutMs: number;
 
   constructor(config: RazorpayClientConfig) {
     if (!config.keyId || !config.keySecret) {
@@ -68,11 +75,31 @@ export class RazorpayClient {
     this.keyId = config.keyId;
     this.keySecret = config.keySecret;
     this.baseUrl = config.baseUrl ?? DEFAULT_BASE_URL;
+    this.timeoutMs = config.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   }
 
   private authHeader(): string {
     const token = Buffer.from(`${this.keyId}:${this.keySecret}`, "utf8").toString("base64");
     return `Basic ${token}`;
+  }
+
+  /** Runs `fetch`-returning `send` with a hard timeout — an aborted
+   * request is surfaced as a `RazorpayApiError`, never a hang. */
+  private async withTimeout(send: (signal: AbortSignal) => Promise<Response>): Promise<Response> {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), this.timeoutMs);
+    try {
+      return await send(controller.signal);
+    } catch (cause) {
+      if (cause instanceof Error && cause.name === "AbortError") {
+        throw new RazorpayApiError(`Razorpay API request timed out after ${this.timeoutMs}ms`, {
+          cause,
+        });
+      }
+      throw new RazorpayApiError("Network error calling the Razorpay API", { cause });
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   private async get<T>(
@@ -87,15 +114,13 @@ export class RazorpayClient {
       }
     }
 
-    let response: Response;
-    try {
-      response = await fetch(url, {
+    const response = await this.withTimeout((signal) =>
+      fetch(url, {
         method: "GET",
         headers: { Authorization: this.authHeader(), Accept: "application/json" },
-      });
-    } catch (cause) {
-      throw new RazorpayApiError("Network error calling the Razorpay API", { cause });
-    }
+        signal,
+      }),
+    );
 
     const bodyText = await response.text();
 
@@ -127,9 +152,8 @@ export class RazorpayClient {
     body: Record<string, unknown>,
     headers?: Record<string, string>,
   ): Promise<T> {
-    let response: Response;
-    try {
-      response = await fetch(`${this.baseUrl}${path}`, {
+    const response = await this.withTimeout((signal) =>
+      fetch(`${this.baseUrl}${path}`, {
         method: "POST",
         headers: {
           Authorization: this.authHeader(),
@@ -138,10 +162,9 @@ export class RazorpayClient {
           ...headers,
         },
         body: JSON.stringify(body),
-      });
-    } catch (cause) {
-      throw new RazorpayApiError("Network error calling the Razorpay API", { cause });
-    }
+        signal,
+      }),
+    );
 
     const bodyText = await response.text();
 

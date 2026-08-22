@@ -118,14 +118,45 @@ describe("updateIssueMetrics", () => {
 });
 
 describe("investigation lifecycle transitions", () => {
-  it("setIssueInvestigating moves status to INVESTIGATING", async () => {
+  it("setIssueInvestigating moves DETECTED -> INVESTIGATING via a conditional update", async () => {
     const db = createMockDb();
-    db.issue.update.mockResolvedValue({ ...issueFixture, status: "INVESTIGATING" });
-    await setIssueInvestigating(db, { id: "issue-1" });
-    expect(db.issue.update).toHaveBeenCalledWith({
-      where: { id: "issue-1" },
+    db.issue.updateMany.mockResolvedValue({ count: 1 });
+    db.issue.findUnique.mockResolvedValue({ ...issueFixture, status: "INVESTIGATING" });
+
+    const result = await setIssueInvestigating(db, { id: "issue-1" });
+
+    expect(db.issue.updateMany).toHaveBeenCalledWith({
+      where: { id: "issue-1", status: { in: ["DETECTED", "INVESTIGATION_FAILED"] } },
       data: { status: "INVESTIGATING" },
     });
+    expect(result?.status).toBe("INVESTIGATING");
+  });
+
+  it("setIssueInvestigating also allows INVESTIGATION_FAILED -> INVESTIGATING (retry)", async () => {
+    const db = createMockDb();
+    db.issue.updateMany.mockResolvedValue({ count: 1 });
+    db.issue.findUnique.mockResolvedValue({ ...issueFixture, status: "INVESTIGATING" });
+
+    const result = await setIssueInvestigating(db, { id: "issue-1" });
+    expect(result).not.toBeNull();
+  });
+
+  it("setIssueInvestigating refuses to transition a DISMISSED issue — returns null, never throws", async () => {
+    const db = createMockDb();
+    db.issue.updateMany.mockResolvedValue({ count: 0 }); // DISMISSED doesn't match the WHERE clause
+
+    const result = await setIssueInvestigating(db, { id: "issue-1" });
+
+    expect(result).toBeNull();
+    expect(db.issue.findUnique).not.toHaveBeenCalled();
+  });
+
+  it("setIssueInvestigating refuses to re-enter INVESTIGATING from RESOLVED", async () => {
+    const db = createMockDb();
+    db.issue.updateMany.mockResolvedValue({ count: 0 });
+
+    const result = await setIssueInvestigating(db, { id: "issue-1" });
+    expect(result).toBeNull();
   });
 
   it("completeIssueInvestigation stores the root cause and cached result, clears any prior error", async () => {

@@ -1,9 +1,11 @@
 # Architecture
 
-Status: Phase 5 — Guarded Recommendations & Actions. This covers what
-exists today. See [`docs/decisions`](../decisions) for the reasoning
+Status: Phase 6 — Evaluation, Reliability & Buildathon Polish. This covers
+what exists today. See [`docs/decisions`](../decisions) for the reasoning
 behind these choices, and [`AGENTS.md`](../../AGENTS.md) for the standing
-architecture principles.
+architecture principles. For a judge-facing, single-page version of this
+pipeline with deterministic and AI-powered stages explicitly marked, see
+[`docs/buildathon/ARCHITECTURE.md`](../buildathon/ARCHITECTURE.md).
 
 ## Data flow
 
@@ -504,6 +506,94 @@ synthetic in-memory `payment`/`recommendation`/`action`/`auditEvent`
 store) and a mocked `RazorpayClient`. Expressed as behavioral pass/fail
 scenarios rather than a scored-metrics harness — see docs/decisions for
 why that fits Phase 5 better than Phase 4's rate-based approach.
+
+## Evaluation, reliability & Buildathon polish (Phase 6)
+
+Phase 6 adds no new financial action type and no new product surface. It
+hardens what Phases 1–5 already built and makes the system easier for a
+judge to evaluate. Everything below is either a fix to a real gap found
+during the Phase 6 audit, or new observability/evaluation/demo
+infrastructure — never a redesign.
+
+### Reliability fixes
+
+- **Request timeouts.** `RazorpayClient` (default 10s) and
+  `AnthropicProvider` (default 30s) now wrap every outbound HTTP call in
+  an `AbortController`/`setTimeout`, so a hanging upstream can never hang
+  a PaySherlock request indefinitely. Native `AbortController` only — no
+  new networking dependency.
+- **`Action` state-machine guard.** `markActionExecuting` /
+  `markActionSucceeded` / `markActionFailed`
+  (`packages/database/src/upsert/action.ts`) now use the same conditional
+  `updateMany({where: {id, status: {in: [...]}}})` guard already used by
+  `Issue`/`Recommendation`, returning `null` (never throwing) for an
+  invalid transition such as `SUCCEEDED → EXECUTING`. This is defense in
+  depth — `Recommendation`'s own atomic guard
+  (`beginRecommendationExecution`) is what actually prevents a concurrent
+  caller from reaching this code — but it means the invariant now holds
+  at every layer independently, not just one.
+- **`Issue` state-machine guard.** `setIssueInvestigating` was previously
+  an unconditional update; it's now the same conditional-`updateMany`
+  pattern, refusing e.g. `DISMISSED → INVESTIGATING`.
+- **Cross-merchant payment lookup (real IDOR, now fixed).** `GET
+/payments` and `GET /payments/:id` did not scope by merchant at all —
+  every other route already derived and scoped by `resolveMerchant`, but
+  these two didn't. `getPaymentById`/`getPaymentByRazorpayId`
+  (`packages/database/src/queries/payments.ts`) now require a
+  `merchantId` and query with it (`findFirst({id, merchantId})`, never
+  fetch-then-check), and both routes resolve the merchant server-side
+  before calling them. This was a genuine security gap found during the
+  Phase 6 audit, not a hypothetical.
+- **Detection worker scheduler.** `workers/investigator`'s `--watch` loop
+  (`startDetectionScheduler` in `src/index.ts`) now refuses to start a new
+  detection run while the previous one is still in flight (a slow run can
+  no longer overlap itself), and `stop()` waits for the in-flight run
+  before resolving (clean shutdown).
+- **Frontend notification timer leak.** `useIssueNotifications`'s
+  auto-dismiss `setTimeout`s are now tracked in a `Set` and cleared on
+  unmount alongside the polling interval — previously only the interval
+  was cleared, so a pending dismiss timer could fire after unmount.
+
+### Observability
+
+- **Request correlation.** Every response carries `X-Request-Id`
+  (`apps/api/src/server.ts`): echoes a well-formed client-supplied id,
+  generates one otherwise, and every log line for that request includes
+  it — via Fastify's `genReqId` plus an `onRequest` hook.
+- Existing structured logging (Fastify's `pino` request/response logs,
+  safe error codes never stack traces) and the append-only `AuditEvent`
+  trail (recommendation/action lifecycle, already built in Phase 5) serve
+  as the detection/investigation/action observability trail — Phase 6
+  didn't need to add a second logging system on top.
+
+### Phase 6 evaluation harness
+
+`apps/api/src/eval/runPhase6Evaluation.ts` (`pnpm --filter @paysherlock/api
+run eval:phase6`) — 12 required scenarios (A–L) covering detection,
+investigation, guarded actions, and cross-merchant isolation end to end,
+deliberately reusing Phase 4's `PHASE4_SCENARIOS`/fake database and Phase
+5's `fakeDatabasePhase5`/recommendation-service rather than building a
+fourth synthetic-data system. Generates
+[`docs/evaluation/phase6-report.json`](../evaluation/phase6-report.json) and
+[`.md`](../evaluation/phase6-report.md) — see
+[`docs/buildathon/EVALUATION.md`](../buildathon/EVALUATION.md) for the
+summary and honesty notes (metrics that can't be measured are reported as
+`"unavailable"`, never fabricated).
+
+### Demo mode (`workers/investigator/src/demo/`)
+
+A deterministic "UPI degradation" scenario against one dedicated example
+merchant ("PaySherlock Demo Merchant") — real detection/investigation
+code, synthetic seed data:
+
+| Command                                                         | Effect                                                                                     |
+| --------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| `pnpm --filter @paysherlock/investigator-worker run demo:seed`  | Seeds 7 days of healthy baseline + a 1-hour UPI-degraded window for the demo merchant.     |
+| `pnpm --filter @paysherlock/investigator-worker run demo:run`   | Runs real detection immediately (no 15-minute wait) and prints issue/investigation status. |
+| `pnpm --filter @paysherlock/investigator-worker run demo:reset` | Deletes and re-seeds only the demo merchant's data — never touches any other merchant.     |
+
+No demo data is ever inserted automatically on startup. See
+[`docs/buildathon/DEMO.md`](../buildathon/DEMO.md) for the full script.
 
 ## Future agent tool foundation → now implemented
 

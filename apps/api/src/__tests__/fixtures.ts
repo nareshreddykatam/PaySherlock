@@ -22,6 +22,7 @@ export function createMockDb(): any {
     payment: {
       upsert: vi.fn(),
       findUnique: vi.fn(),
+      findFirst: vi.fn(),
       findMany: vi.fn(),
       aggregate: vi.fn(),
       groupBy: vi.fn(),
@@ -38,6 +39,7 @@ export function createMockDb(): any {
     },
     issue: {
       findFirst: vi.fn(),
+      findUnique: vi.fn(),
       findMany: vi.fn(),
       create: vi.fn(),
       update: vi.fn(),
@@ -55,6 +57,7 @@ export function createMockDb(): any {
       findUnique: vi.fn(),
       create: vi.fn(),
       update: vi.fn(),
+      updateMany: vi.fn(),
     },
     auditEvent: {
       create: vi.fn(),

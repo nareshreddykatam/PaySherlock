@@ -4,14 +4,20 @@
 
 > Built for the Razorpay Buildathon — Open Track
 
-## Status: Phase 5 — Guarded Recommendations & Actions
+## Status: Phase 6 — Evaluation, Reliability & Buildathon Polish
 
 Phase 0 (monorepo tooling), Phase 1 (Razorpay Test Mode integration,
 normalized payment data), Phase 2 (the AI investigation engine), Phase 3
-(the Investigation Command Center frontend), and Phase 4 (deterministic
+(the Investigation Command Center frontend), Phase 4 (deterministic
 proactive detection — `packages/detection`, persisted `Issue` records,
-automatic investigation triggering) are complete. Phase 5 adds the first
-guarded financial action: a merchant-approved refund. The architecture is
+automatic investigation triggering), and Phase 5 (the first guarded
+financial action: a merchant-approved refund) are complete. Phase 6 adds
+no new financial action and no new product surface — it hardens
+reliability/security (including a real cross-merchant payment-lookup gap
+found and fixed during this phase's audit — see
+[docs/buildathon/SAFETY.md](docs/buildathon/SAFETY.md)), adds request
+timeouts and correlation ids, adds a 12-scenario end-to-end evaluation
+harness, and adds Buildathon demo/documentation. The architecture is
 strict and one-directional — `AI → Recommendation → deterministic
 validation → risk policy → merchant approval → action executor →
 Razorpay → verification → audit record` — and the LLM **never** executes a
@@ -19,8 +25,10 @@ financial action or calls Razorpay directly; it only ever supplies
 explanatory text. **Bulk refunds, payment capture, payment links,
 settlement operations, and any automatic/unapproved execution are not
 implemented and are explicitly out of scope.** See
-[Development Status](#development-status) below and
-[docs/architecture](docs/architecture) for details.
+[Development Status](#development-status) below,
+[docs/architecture](docs/architecture), and
+[docs/buildathon](docs/buildathon) (judge-facing overview, architecture,
+demo script, evaluation results, safety guarantees) for details.
 
 ## Problem
 
@@ -84,7 +92,7 @@ conclusions are backed by structured evidence. Full details in
 | UI              | Tailwind CSS v4 + Radix UI primitives                                      |
 | Backend         | Node.js / TypeScript                                                       |
 | Database        | PostgreSQL + Prisma                                                        |
-| Background jobs | Redis + BullMQ                                                             |
+| Background jobs | Plain `setInterval` scheduler (`workers/investigator`) — no Redis/BullMQ   |
 | AI              | Provider-independent LLM adapter (Anthropic implemented; others pluggable) |
 | Payments        | Razorpay APIs + Webhooks                                                   |
 
@@ -135,6 +143,25 @@ conclusions are backed by structured evidence. Full details in
 - [x] Frontend: recommendation card with an explicit confirmation dialog
       ("Confirm Refund", never "OK"/"Continue"), success/failure states,
       and a real recommendation-history page (`/recommendations`)
+- [x] Request timeouts on every outbound call (`RazorpayClient` 10s,
+      `AnthropicProvider` 30s via `AbortController`) — nothing can hang
+      indefinitely
+- [x] `Action` state-machine guard (conditional `updateMany`, matching
+      `Issue`/`Recommendation`) — an invalid transition like
+      `SUCCEEDED → EXECUTING` returns null rather than corrupting state
+- [x] Fixed a real cross-merchant IDOR gap: `GET /payments` and
+      `GET /payments/:id` are now merchant-scoped like every other route
+      (found during the Phase 6 security audit)
+- [x] Request correlation (`X-Request-Id`, echoed and logged on every
+      request)
+- [x] Detection worker scheduler hardening — no overlapping detection
+      runs, clean shutdown
+- [x] 12-scenario Phase 6 end-to-end evaluation harness
+      (`pnpm --filter @paysherlock/api run eval:phase6`) — generates
+      [docs/evaluation/phase6-report.md](docs/evaluation/phase6-report.md)
+- [x] Buildathon demo mode (`workers/investigator/src/demo/` —
+      `demo:seed`/`demo:run`/`demo:reset`) and documentation
+      ([docs/buildathon](docs/buildathon))
 - [ ] Bulk refunds, payment capture, payment links, settlement operations
 - [ ] Merchant approval _workflows_ beyond single-click approve/reject (e.g.
       multi-approver), production authentication, real (non-in-app)
@@ -149,7 +176,7 @@ pnpm --filter @paysherlock/database run db:migrate:dev
 ```
 
 Working: `pnpm build`, `pnpm lint`, `pnpm typecheck`, `pnpm format:check`,
-`pnpm test` (329 tests across the Razorpay adapter, database layer, tools,
+`pnpm test` (364 tests across the Razorpay adapter, database layer, tools,
 agent, detection engine, actions/recommendation layer, API, web frontend,
 and detection worker — run via Turborepo, no AI credentials, live
 database, or live Razorpay credentials required). The Phase 5 evaluation
@@ -158,7 +185,13 @@ valid refund, already-refunded, over-limit amount, double approval,
 provider failure, expired recommendation, merchant isolation, retry) run
 as part of `pnpm --filter @paysherlock/api run test`
 (`src/__tests__/phase5Evaluation.test.ts`) against a synthetic in-memory
-database and a mocked Razorpay client — never live credentials.
+database and a mocked Razorpay client — never live credentials. The
+Phase 6 evaluation scenarios (A–L: the full detection → investigation →
+recommendation → approval → action → verification → audit lifecycle,
+plus cross-merchant isolation) run the same way
+(`src/__tests__/phase6Evaluation.test.ts`) and are also runnable
+standalone via `pnpm --filter @paysherlock/api run eval:phase6`, which
+generates [docs/evaluation/phase6-report.md](docs/evaluation/phase6-report.md).
 
 `pnpm --filter @paysherlock/api run dev` starts the API on `PORT` (default
 `4000`) — by default with `AI_PROVIDER=deterministic`, so `POST
@@ -181,6 +214,14 @@ detection engine once for the merchant and exits — the fastest way to see
 an issue appear without waiting for the schedule. `pnpm --filter
 @paysherlock/investigator-worker run start` runs it immediately, then every
 `DETECTION_INTERVAL_MS` (default 15 minutes, configurable) until stopped.
+
+For a Buildathon walkthrough: `pnpm --filter @paysherlock/investigator-worker
+run demo:seed` seeds a deterministic "UPI degradation" scenario against one
+dedicated example merchant ("PaySherlock Demo Merchant"), `run demo:run`
+triggers detection immediately (no waiting on the interval) and prints the
+resulting issue/investigation, and `run demo:reset` deletes and re-seeds
+only that merchant's data. Full script in
+[docs/buildathon/DEMO.md](docs/buildathon/DEMO.md).
 
 ## Security Note
 
@@ -211,7 +252,15 @@ trace and the tests that verify no bypass exists.
 5. **Phase 4 — Proactive Payment Intelligence** _(done)_: deterministic
    anomaly detection, persisted issues, automatic (existing-engine)
    investigation triggering, detection worker, in-app notifications.
-6. **Phase 5 — Guarded Recommendations & Actions** _(current)_: a
+6. **Phase 5 — Guarded Recommendations & Actions** _(done)_: a
    deterministically-validated, merchant-approved refund action — the
    first (and, for now, only) real financial action, with full
    idempotency, audit trail, and stale-state re-validation.
+7. **Phase 6 — Evaluation, Reliability & Buildathon Polish** _(current)_:
+   no new financial action or product surface. A 12-scenario end-to-end
+   evaluation harness; reliability hardening (request timeouts, an
+   `Action` state-machine guard, detection-scheduler overlap prevention,
+   a notification-timer leak fix); a real cross-merchant payment-lookup
+   security gap found and fixed; request correlation ids; a deterministic
+   Buildathon demo mode; and Buildathon documentation
+   ([docs/buildathon](docs/buildathon)).

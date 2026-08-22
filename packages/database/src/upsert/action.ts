@@ -41,11 +41,24 @@ export async function getActionByRecommendationId(
   return db.action.findUnique({ where: { recommendationId } });
 }
 
+const EXECUTABLE_FROM: Action["status"][] = ["APPROVED", "FAILED"];
+
 /** APPROVED|FAILED -> EXECUTING. Kept in lock-step with
  * `beginRecommendationExecution` — callers always transition both rows
- * together. */
-export async function markActionExecuting(db: Database, id: string): Promise<Action> {
-  return db.action.update({ where: { id }, data: { status: "EXECUTING", startedAt: new Date() } });
+ * together. Guarded by the same conditional-`updateMany` pattern as the
+ * Issue/Recommendation state machines (SUCCEEDED -> EXECUTING, for
+ * example, must never succeed) even though the Recommendation-level
+ * atomic guard in `beginRecommendationExecution` is what actually
+ * prevents concurrent callers from racing to this point — this is
+ * defense in depth, not the primary guard. Returns null if the action is
+ * not currently in an executable state. */
+export async function markActionExecuting(db: Database, id: string): Promise<Action | null> {
+  const result = await db.action.updateMany({
+    where: { id, status: { in: EXECUTABLE_FROM } },
+    data: { status: "EXECUTING", startedAt: new Date() },
+  });
+  if (result.count === 0) return null;
+  return db.action.findUnique({ where: { id } });
 }
 
 export interface MarkActionSucceededParams {
@@ -54,12 +67,15 @@ export interface MarkActionSucceededParams {
   providerStatus: string;
 }
 
+/** EXECUTING -> SUCCEEDED only. A completed action (SUCCEEDED or FAILED)
+ * can never be re-marked successful — returns null rather than throwing,
+ * matching the Issue/Recommendation guard pattern. */
 export async function markActionSucceeded(
   db: Database,
   params: MarkActionSucceededParams,
-): Promise<Action> {
-  return db.action.update({
-    where: { id: params.id },
+): Promise<Action | null> {
+  const result = await db.action.updateMany({
+    where: { id: params.id, status: "EXECUTING" },
     data: {
       status: "SUCCEEDED",
       providerReference: params.providerReference,
@@ -69,6 +85,8 @@ export async function markActionSucceeded(
       errorMessage: null,
     },
   });
+  if (result.count === 0) return null;
+  return db.action.findUnique({ where: { id: params.id } });
 }
 
 export interface MarkActionFailedParams {
@@ -79,12 +97,15 @@ export interface MarkActionFailedParams {
   providerStatus?: string | null;
 }
 
+/** EXECUTING -> FAILED only. A SUCCEEDED action can never be overwritten
+ * to FAILED (a provider success is final), matching the Issue/
+ * Recommendation guard pattern. */
 export async function markActionFailed(
   db: Database,
   params: MarkActionFailedParams,
-): Promise<Action> {
-  return db.action.update({
-    where: { id: params.id },
+): Promise<Action | null> {
+  const result = await db.action.updateMany({
+    where: { id: params.id, status: "EXECUTING" },
     data: {
       status: "FAILED",
       errorCode: params.errorCode,
@@ -93,4 +114,6 @@ export async function markActionFailed(
       completedAt: new Date(),
     },
   });
+  if (result.count === 0) return null;
+  return db.action.findUnique({ where: { id: params.id } });
 }

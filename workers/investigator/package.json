@@ -13,6 +13,9 @@
     "dev": "tsx watch src/index.ts --watch",
     "detect": "tsx src/index.ts",
     "start": "node dist/index.js --watch",
+    "demo:seed": "tsx src/demo/seed.ts",
+    "demo:reset": "tsx src/demo/reset.ts",
+    "demo:run": "tsx src/demo/run.ts",
     "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\""
   },
   "dependencies": {

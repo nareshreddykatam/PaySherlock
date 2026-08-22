@@ -112,8 +112,8 @@ export async function generateRecommendationForInvestigation(
   let candidate = null;
 
   if (params.targetPaymentId) {
-    const payment = await getPaymentById(deps.db, params.targetPaymentId);
-    if (payment && payment.merchantId === params.merchantId) {
+    const payment = await getPaymentById(deps.db, params.targetPaymentId, params.merchantId);
+    if (payment) {
       candidate = generateRefundRecommendationCandidate(params.investigation, { payment });
     }
   }
@@ -122,7 +122,7 @@ export async function generateRecommendationForInvestigation(
 
   let targetPayment = null;
   if (candidate.targetPaymentId) {
-    const payment = await getPaymentById(deps.db, candidate.targetPaymentId);
+    const payment = await getPaymentById(deps.db, candidate.targetPaymentId, params.merchantId);
     targetPayment = payment ? { ...payment } : null;
   }
 
@@ -299,7 +299,15 @@ async function runExecution(
       from: "APPROVED",
     });
   }
-  await markActionExecuting(deps.db, action.id);
+  // Defense in depth only: the Recommendation-level atomic guard above is
+  // what actually prevents a concurrent caller from reaching this point
+  // for an action that isn't APPROVED|FAILED. A null here means that
+  // invariant was violated somehow — fail safely rather than proceeding
+  // to call Razorpay against an action in an unexpected state.
+  const executing = await markActionExecuting(deps.db, action.id);
+  if (!executing) {
+    throw new AgentError(`Action "${action.id}" is not in an executable state`);
+  }
   await recordAuditEvent(deps.db, {
     merchantId: recommendation.merchantId,
     eventType: "ACTION_STARTED",
@@ -311,7 +319,11 @@ async function runExecution(
   if (recommendation.targetPaymentId === null) {
     throw new AgentError(`Recommendation "${recommendation.id}" has no target payment to refund`);
   }
-  const payment = await getPaymentById(deps.db, recommendation.targetPaymentId);
+  const payment = await getPaymentById(
+    deps.db,
+    recommendation.targetPaymentId,
+    recommendation.merchantId,
+  );
   if (!payment) {
     throw new NotFoundError(`Payment "${recommendation.targetPaymentId}" was not found`);
   }
@@ -334,6 +346,9 @@ async function runExecution(
       providerReference: result.providerReference,
       providerStatus: result.providerStatus,
     });
+    if (!updatedAction) {
+      throw new AgentError(`Action "${action.id}" was not in EXECUTING when marking it succeeded`);
+    }
     const updatedRecommendation = await completeRecommendationSuccess(deps.db, recommendation.id);
     await recordAuditEvent(deps.db, {
       merchantId: recommendation.merchantId,
@@ -351,6 +366,9 @@ async function runExecution(
     errorMessage: result.errorMessage,
     providerStatus: null,
   });
+  if (!updatedAction) {
+    throw new AgentError(`Action "${action.id}" was not in EXECUTING when marking it failed`);
+  }
   const updatedRecommendation = await completeRecommendationFailure(deps.db, recommendation.id);
   await recordAuditEvent(deps.db, {
     merchantId: recommendation.merchantId,

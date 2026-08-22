@@ -111,14 +111,31 @@ export interface SetIssueInvestigatingParams {
   id: string;
 }
 
+/** Statuses an issue may transition to INVESTIGATING from — the storm-
+ * prevention/orchestration logic in packages/detection already only calls
+ * this for an issue in one of these states, but the guard lives here too
+ * (Phase 6 reliability hardening: a state transition should never depend
+ * solely on the caller having checked first). In particular, a DISMISSED
+ * or RESOLVED issue can never be moved back to INVESTIGATING through this
+ * function. */
+const INVESTIGATABLE_FROM: IssueLifecycleStatus[] = ["DETECTED", "INVESTIGATION_FAILED"];
+
 /** Marks an issue as having an investigation in flight — set *before*
  * calling the agent so a concurrent/subsequent detection run never
- * triggers a second one for the same issue (storm prevention). */
+ * triggers a second one for the same issue (storm prevention). A
+ * conditional update, not a blind write: returns `null` (rather than
+ * throwing) if the issue wasn't in a state this transition is valid from —
+ * callers must treat that as "do not proceed", not retry blindly. */
 export async function setIssueInvestigating(
   db: Database,
   params: SetIssueInvestigatingParams,
-): Promise<Issue> {
-  return db.issue.update({ where: { id: params.id }, data: { status: "INVESTIGATING" } });
+): Promise<Issue | null> {
+  const result = await db.issue.updateMany({
+    where: { id: params.id, status: { in: INVESTIGATABLE_FROM } },
+    data: { status: "INVESTIGATING" },
+  });
+  if (result.count === 0) return null;
+  return db.issue.findUnique({ where: { id: params.id } });
 }
 
 export interface CompleteIssueInvestigationParams {

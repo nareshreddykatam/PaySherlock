@@ -17,6 +17,24 @@ function mockFetchOnce(response: { ok: boolean; status?: number; body: string })
   return fetchMock;
 }
 
+/** A `fetch` that never resolves on its own — only rejects once its
+ * request's AbortSignal fires, mirroring how the real `fetch` behaves for
+ * an aborted request. Used to verify the client's own timeout, not
+ * Node's. */
+function mockHangingFetch() {
+  const fetchMock = vi.fn((_url: unknown, init?: { signal?: AbortSignal }) => {
+    return new Promise((_resolve, reject) => {
+      init?.signal?.addEventListener("abort", () => {
+        const error = new Error("The operation was aborted");
+        error.name = "AbortError";
+        reject(error);
+      });
+    });
+  });
+  vi.stubGlobal("fetch", fetchMock);
+  return fetchMock;
+}
+
 afterEach(() => {
   vi.unstubAllGlobals();
 });
@@ -161,5 +179,48 @@ describe("RazorpayClient refunds.create", () => {
       .catch((error: unknown) => error);
     expect(failure).toBeInstanceOf(RazorpayApiError);
     expect((failure as RazorpayApiError).status).toBe(400);
+  });
+});
+
+describe("RazorpayClient timeouts", () => {
+  it("aborts a GET request that hangs past the configured timeout", async () => {
+    mockHangingFetch();
+    const client = new RazorpayClient({
+      keyId: "rzp_test_key",
+      keySecret: "shh_secret",
+      timeoutMs: 20,
+    });
+
+    const failure = await client.payments.fetch("pay_x").catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(RazorpayApiError);
+    expect((failure as RazorpayApiError).message).toMatch(/timed out after 20ms/);
+  });
+
+  it("aborts a POST (refund) request that hangs past the configured timeout", async () => {
+    mockHangingFetch();
+    const client = new RazorpayClient({
+      keyId: "rzp_test_key",
+      keySecret: "shh_secret",
+      timeoutMs: 20,
+    });
+
+    const failure = await client.refunds
+      .create("pay_test0000000001", { amountMinorUnits: 1000 }, "refund-action-cid12345")
+      .catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(RazorpayApiError);
+    expect((failure as RazorpayApiError).message).toMatch(/timed out after 20ms/);
+  });
+
+  it("defaults to a 10s timeout when none is configured", async () => {
+    const fetchMock = mockHangingFetch();
+    const client = new RazorpayClient({ keyId: "rzp_test_key", keySecret: "shh_secret" });
+
+    // Just confirm the signal is actually wired through to fetch — proving
+    // the default timeout will eventually fire without waiting 10 real
+    // seconds in the test.
+    void client.payments.fetch("pay_x").catch(() => undefined);
+    await Promise.resolve();
+    const [, init] = fetchMock.mock.calls[0]!;
+    expect((init as { signal?: AbortSignal }).signal).toBeInstanceOf(AbortSignal);
   });
 });

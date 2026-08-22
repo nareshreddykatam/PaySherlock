@@ -4,6 +4,7 @@ import {
   getPaymentById,
   getPaymentByRazorpayId,
   listPayments,
+  resolveMerchant,
   type Payment,
 } from "@paysherlock/database";
 import { NotFoundError, ValidationError } from "@paysherlock/types";
@@ -46,7 +47,11 @@ export function registerPaymentRoutes(app: FastifyInstance, deps: ServerDeps): v
       );
     }
 
+    // Merchant scoping is derived server-side, never from client input —
+    // same trusted pattern as every other route. See docs/decisions.
+    const merchant = await resolveMerchant(deps.db, {});
     const page = await listPayments(deps.db, {
+      merchantId: merchant.id,
       limit: query.data.limit,
       cursor: query.data.cursor,
     });
@@ -59,9 +64,10 @@ export function registerPaymentRoutes(app: FastifyInstance, deps: ServerDeps): v
 
   app.get<{ Params: { id: string } }>("/payments/:id", async (request) => {
     const { id } = request.params;
+    const merchant = await resolveMerchant(deps.db, {});
     const payment = id.startsWith("pay_")
-      ? await getPaymentByRazorpayId(deps.db, id)
-      : await getPaymentById(deps.db, id);
+      ? await getPaymentByRazorpayId(deps.db, id, merchant.id)
+      : await getPaymentById(deps.db, id, merchant.id);
 
     if (!payment) {
       throw new NotFoundError(`Payment "${id}" was not found`);

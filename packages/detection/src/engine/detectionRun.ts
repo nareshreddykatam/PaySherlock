@@ -207,7 +207,14 @@ async function triggerInvestigation(
   issue: Issue,
   result: DetectionResult,
 ): Promise<"succeeded" | "failed"> {
-  await setIssueInvestigating(deps.db, { id: issue.id });
+  const investigating = await setIssueInvestigating(deps.db, { id: issue.id });
+  if (!investigating) {
+    // The issue moved out of a state this transition is valid from between
+    // shouldTriggerInvestigation's check and this call (e.g. dismissed, or
+    // already picked up by a concurrent run) — never proceed with an
+    // investigation against a state we no longer trust.
+    return "failed";
+  }
   try {
     const investigationResult = await deps.runInvestigation({
       question: questionFor(result),

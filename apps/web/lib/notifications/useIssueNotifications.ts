@@ -61,6 +61,11 @@ export function useIssueNotifications(): {
   useEffect(() => {
     seenRef.current = readSeen();
     let cancelled = false;
+    // Auto-dismiss timers are tracked so they can be cleared on unmount —
+    // otherwise a timer outliving the component would call `dismiss` (and
+    // therefore `setNotifications`) against a component that's already
+    // gone (Phase 6 reliability hardening: no dangling timers).
+    const dismissTimers = new Set<ReturnType<typeof setTimeout>>();
 
     async function poll() {
       let page;
@@ -102,7 +107,11 @@ export function useIssueNotifications(): {
       if (fresh.length > 0) {
         setNotifications((current) => [...current, ...fresh]);
         for (const notification of fresh) {
-          setTimeout(() => dismiss(notification.key), AUTO_DISMISS_MS);
+          const timer = setTimeout(() => {
+            dismissTimers.delete(timer);
+            dismiss(notification.key);
+          }, AUTO_DISMISS_MS);
+          dismissTimers.add(timer);
         }
       }
     }
@@ -112,6 +121,8 @@ export function useIssueNotifications(): {
     return () => {
       cancelled = true;
       clearInterval(interval);
+      for (const timer of dismissTimers) clearTimeout(timer);
+      dismissTimers.clear();
     };
   }, [dismiss]);
 
