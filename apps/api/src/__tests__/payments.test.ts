@@ -2,7 +2,10 @@ import { describe, expect, it } from "vitest";
 import { buildServer } from "../server.js";
 import {
   createMockDb,
+  noopApproveRecommendation,
   noopGetOverview,
+  noopRejectRecommendation,
+  noopRetryRecommendation,
   noopRunInvestigation,
   paymentRowFixture,
 } from "./fixtures.js";
@@ -16,6 +19,9 @@ describe("GET /payments", () => {
       webhookSecret: "whsec_test",
       runInvestigation: noopRunInvestigation(),
       getOverview: noopGetOverview(),
+      approveRecommendation: noopApproveRecommendation(),
+      rejectRecommendation: noopRejectRecommendation(),
+      retryRecommendation: noopRetryRecommendation(),
     });
 
     const response = await app.inject({ method: "GET", url: "/payments" });
@@ -39,6 +45,9 @@ describe("GET /payments", () => {
       webhookSecret: "whsec_test",
       runInvestigation: noopRunInvestigation(),
       getOverview: noopGetOverview(),
+      approveRecommendation: noopApproveRecommendation(),
+      rejectRecommendation: noopRejectRecommendation(),
+      retryRecommendation: noopRetryRecommendation(),
     });
     const response = await app.inject({ method: "GET", url: "/payments?limit=500" });
 
@@ -57,6 +66,9 @@ describe("GET /payments/:id", () => {
       webhookSecret: "whsec_test",
       runInvestigation: noopRunInvestigation(),
       getOverview: noopGetOverview(),
+      approveRecommendation: noopApproveRecommendation(),
+      rejectRecommendation: noopRejectRecommendation(),
+      retryRecommendation: noopRetryRecommendation(),
     });
 
     const response = await app.inject({ method: "GET", url: "/payments/internal-1" });
@@ -74,6 +86,9 @@ describe("GET /payments/:id", () => {
       webhookSecret: "whsec_test",
       runInvestigation: noopRunInvestigation(),
       getOverview: noopGetOverview(),
+      approveRecommendation: noopApproveRecommendation(),
+      rejectRecommendation: noopRejectRecommendation(),
+      retryRecommendation: noopRetryRecommendation(),
     });
 
     const response = await app.inject({ method: "GET", url: "/payments/pay_test0000000001" });
@@ -93,6 +108,9 @@ describe("GET /payments/:id", () => {
       webhookSecret: "whsec_test",
       runInvestigation: noopRunInvestigation(),
       getOverview: noopGetOverview(),
+      approveRecommendation: noopApproveRecommendation(),
+      rejectRecommendation: noopRejectRecommendation(),
+      retryRecommendation: noopRetryRecommendation(),
     });
 
     const response = await app.inject({ method: "GET", url: "/payments/does-not-exist" });

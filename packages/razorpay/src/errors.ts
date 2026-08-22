@@ -28,3 +28,8 @@ export class RazorpayMalformedResponseError extends UpstreamApiError {}
 export class RazorpayWebhookSignatureError extends SignatureVerificationError {}
 
 export class RazorpayWebhookPayloadError extends ValidationError {}
+
+/** Guards against ever sending Razorpay a refund idempotency key that
+ * doesn't meet its own documented constraint — a defensive check inside
+ * the adapter itself, not just trust in the caller (packages/actions). */
+export class RazorpayInvalidIdempotencyKeyError extends ValidationError {}

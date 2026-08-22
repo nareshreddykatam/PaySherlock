@@ -1,7 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
 import { buildServer } from "../server.js";
 import { getOverview } from "../services/overviewService.js";
-import { createMockDb, noopRunInvestigation } from "./fixtures.js";
+import {
+  createMockDb,
+  noopApproveRecommendation,
+  noopRejectRecommendation,
+  noopRetryRecommendation,
+  noopRunInvestigation,
+} from "./fixtures.js";
 
 describe("GET /overview (route)", () => {
   it("derives the merchant server-side and returns whatever getOverview produces", async () => {
@@ -14,6 +20,9 @@ describe("GET /overview (route)", () => {
       webhookSecret: "whsec_test",
       runInvestigation: noopRunInvestigation(),
       getOverview: overviewFn,
+      approveRecommendation: noopApproveRecommendation(),
+      rejectRecommendation: noopRejectRecommendation(),
+      retryRecommendation: noopRetryRecommendation(),
     });
 
     const response = await app.inject({ method: "GET", url: "/overview" });

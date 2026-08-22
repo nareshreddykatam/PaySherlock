@@ -49,6 +49,23 @@ export function createMockDb(): any {
       update: vi.fn(),
       updateMany: vi.fn(),
     },
+    recommendation: {
+      findFirst: vi.fn(),
+      findMany: vi.fn(),
+      create: vi.fn(),
+      update: vi.fn(),
+      updateMany: vi.fn(),
+    },
+    action: {
+      findFirst: vi.fn(),
+      findUnique: vi.fn(),
+      create: vi.fn(),
+      update: vi.fn(),
+    },
+    auditEvent: {
+      create: vi.fn(),
+      findMany: vi.fn(),
+    },
   };
 }
 

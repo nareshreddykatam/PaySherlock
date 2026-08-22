@@ -1,9 +1,9 @@
 # Architecture
 
-Status: Phase 4 — Proactive Payment Intelligence. This covers what exists
-today. See [`docs/decisions`](../decisions) for the reasoning behind these
-choices, and [`AGENTS.md`](../../AGENTS.md) for the standing architecture
-principles.
+Status: Phase 5 — Guarded Recommendations & Actions. This covers what
+exists today. See [`docs/decisions`](../decisions) for the reasoning
+behind these choices, and [`AGENTS.md`](../../AGENTS.md) for the standing
+architecture principles.
 
 ## Data flow
 
@@ -412,6 +412,98 @@ duplicate-issue rate, investigation-trigger success, and root-cause
 accuracy — wired into `pnpm test` and runnable standalone via
 `pnpm --filter @paysherlock/api run eval:phase4`. Labeled explicitly as
 controlled synthetic evaluation, not real-world accuracy (brief section 36).
+
+## Guarded recommendations & actions (Phase 5)
+
+```
+Completed investigation (targetPaymentId set)
+      │
+      ▼
+generateRecommendationForInvestigation (apps/api)
+      │
+      ├─▶ generateRefundRecommendationCandidate / generateNoActionCandidate
+      │     (packages/actions) — pure functions, no persistence
+      │
+      ├─▶ validateRecommendationCandidate (packages/actions)  — re-checks
+      │     type/payment-ownership/amount/eligibility against real,
+      │     currently-persisted state, regardless of where the candidate
+      │     came from
+      │
+      ├─▶ determineRiskLevel (packages/actions)  — deterministic, amount-based
+      │
+      ▼
+Recommendation (PENDING_APPROVAL for REFUND_PAYMENT, already-terminal
+SUCCEEDED for NO_ACTION) — persisted, audited (RECOMMENDATION_CREATED)
+      │
+      ▼
+Merchant: POST /recommendations/:id/approve  (explicit, no request body)
+      │
+      ▼
+approveRecommendation (atomic conditional UPDATE — see docs/decisions)
+      │
+      ├─▶ createAction (idempotencyKey = paysherlock-refund-<recommendationId>)
+      ├─▶ audit: RECOMMENDATION_APPROVED
+      │
+      ▼
+runExecution (apps/api) — APPROVED → EXECUTING
+      │
+      ├─▶ audit: ACTION_STARTED
+      ├─▶ executeRefund (packages/actions)
+      │     ├─▶ razorpayClient.payments.fetch()      — live state, never cached
+      │     ├─▶ validateRefundEligibility()           — re-checked against live state
+      │     ├─▶ razorpayClient.refunds.create()        — packages/razorpay, Test Mode
+      │     └─▶ razorpayClient.refunds.fetch()         — verify before claiming success
+      │
+      ▼
+SUCCEEDED (audit: ACTION_SUCCEEDED) | FAILED (audit: ACTION_FAILED, safe error)
+```
+
+A `FAILED` recommendation can be retried (`POST /recommendations/:id/retry`)
+— this re-enters `runExecution` reusing the _same_ `Action` row and
+`idempotencyKey`, never a new logical action.
+
+### Recommendation / Action data model
+
+| Model            | Owns                                                                                                                                                                                                |
+| ---------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Recommendation` | The narrative + decision: type, title, LLM-influenced explanation, riskLevel, status, target payment/amount/currency, approval/rejection/expiry timestamps.                                         |
+| `Action`         | The execution mechanics: idempotencyKey, providerReference/providerStatus, errorCode/errorMessage, started/completed timestamps. One-to-one with a `Recommendation`, created only at approval time. |
+| `AuditEvent`     | Append-only log of `RECOMMENDATION_{CREATED,APPROVED,REJECTED}` / `ACTION_{STARTED,SUCCEEDED,FAILED}`, with safe structured metadata only.                                                          |
+
+See [docs/decisions/0005](../decisions/0005-guarded-actions.md) for why
+these are two models (not one) and the full state-machine/idempotency
+reasoning.
+
+### API endpoints (Phase 5)
+
+| Endpoint                            | Notes                                                                                     |
+| ----------------------------------- | ----------------------------------------------------------------------------------------- |
+| `GET /recommendations`              | Merchant-scoped, cursor-paginated, newest-first, includes the linked `Action` if present. |
+| `GET /recommendations/:id`          | Merchant-scoped lookup — 404 if not found or owned by another merchant.                   |
+| `POST /recommendations/:id/approve` | No request body. Approves and, in the same call, executes. 409 if not pending/expired.    |
+| `POST /recommendations/:id/reject`  | No request body. 409 if not pending.                                                      |
+| `POST /recommendations/:id/retry`   | No request body. Only valid from `FAILED`; reuses the existing `Action`.                  |
+| `GET /actions/:id`                  | Merchant-scoped lookup of the execution record.                                           |
+| `POST /investigations`              | Now accepts optional `targetPaymentId`; response includes `recommendation` (nullable).    |
+
+### Razorpay adapter (extended)
+
+`packages/razorpay`'s `RazorpayClient` gained `refunds.create(paymentId,
+body, idempotencyKey)` — `POST /payments/:id/refund` with the
+`X-Refund-Idempotency` header — the one write operation this phase adds.
+Same class, same auth/response-validation pattern as every read method
+Phase 1 built; no second HTTP client.
+
+### Evaluation
+
+`apps/api/src/__tests__/phase5Evaluation.test.ts` — the 8 required
+scenarios (A–H: valid refund, already-refunded, over-limit amount, double
+approval, provider failure, expired recommendation, merchant isolation,
+retry), run against `apps/api/src/eval/fakeDatabasePhase5.ts` (a
+synthetic in-memory `payment`/`recommendation`/`action`/`auditEvent`
+store) and a mocked `RazorpayClient`. Expressed as behavioral pass/fail
+scenarios rather than a scored-metrics harness — see docs/decisions for
+why that fits Phase 5 better than Phase 4's rate-based approach.
 
 ## Future agent tool foundation → now implemented
 

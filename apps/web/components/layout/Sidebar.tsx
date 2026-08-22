@@ -2,7 +2,15 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutGrid, Search, CreditCard, AlertTriangle, History, Settings } from "lucide-react";
+import {
+  LayoutGrid,
+  Search,
+  CreditCard,
+  AlertTriangle,
+  ShieldCheck,
+  History,
+  Settings,
+} from "lucide-react";
 import { Logo } from "./Logo";
 import { ConnectionStatus } from "./ConnectionStatus";
 import { cn } from "@/lib/utils/cn";
@@ -12,6 +20,7 @@ const NAV_ITEMS = [
   { href: "/investigate", label: "Investigate", icon: Search },
   { href: "/payments", label: "Payments", icon: CreditCard },
   { href: "/issues", label: "Issues", icon: AlertTriangle },
+  { href: "/recommendations", label: "Recommendations", icon: ShieldCheck },
   { href: "/history", label: "History", icon: History },
 ] as const;
 

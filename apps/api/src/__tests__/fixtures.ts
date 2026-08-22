@@ -43,6 +43,23 @@ export function createMockDb(): any {
       update: vi.fn(),
       updateMany: vi.fn(),
     },
+    recommendation: {
+      findFirst: vi.fn(),
+      findMany: vi.fn(),
+      create: vi.fn(),
+      update: vi.fn(),
+      updateMany: vi.fn(),
+    },
+    action: {
+      findFirst: vi.fn(),
+      findUnique: vi.fn(),
+      create: vi.fn(),
+      update: vi.fn(),
+    },
+    auditEvent: {
+      create: vi.fn(),
+      findMany: vi.fn(),
+    },
   };
 }
 
@@ -56,6 +73,18 @@ export function noopRunInvestigation() {
 /** Stub for ServerDeps.getOverview in tests that don't exercise the
  * /overview route. */
 export function noopGetOverview() {
+  return vi.fn();
+}
+
+/** Stubs for ServerDeps.{approve,reject,retry}Recommendation in tests that
+ * don't exercise the /recommendations approval endpoints. */
+export function noopApproveRecommendation() {
+  return vi.fn();
+}
+export function noopRejectRecommendation() {
+  return vi.fn();
+}
+export function noopRetryRecommendation() {
   return vi.fn();
 }
 

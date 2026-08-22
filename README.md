@@ -4,21 +4,21 @@
 
 > Built for the Razorpay Buildathon — Open Track
 
-## Status: Phase 4 — Proactive Payment Intelligence
+## Status: Phase 5 — Guarded Recommendations & Actions
 
 Phase 0 (monorepo tooling), Phase 1 (Razorpay Test Mode integration,
-normalized payment data), Phase 2 (the AI investigation engine —
-provider-independent LLM layer, typed tool registry, bounded
-planner/execution loop, deterministic evidence/hypothesis system, exposed
-via `POST /investigations`), and Phase 3 (the merchant-facing Investigation
-Command Center frontend, `apps/web`) are complete. Phase 4 adds proactive
-detection: a deterministic anomaly-detection engine (`packages/detection`,
-five detectors, zero LLM involvement) that persists findings as `Issue`
-records and automatically triggers the _same, unmodified_ Phase 2
-investigation engine — no second agent. A detection worker
-(`workers/investigator`) runs this on a schedule or on demand. **Financial
-actions, autonomous approval workflows, and production
-authentication/notifications are not implemented yet.** See
+normalized payment data), Phase 2 (the AI investigation engine), Phase 3
+(the Investigation Command Center frontend), and Phase 4 (deterministic
+proactive detection — `packages/detection`, persisted `Issue` records,
+automatic investigation triggering) are complete. Phase 5 adds the first
+guarded financial action: a merchant-approved refund. The architecture is
+strict and one-directional — `AI → Recommendation → deterministic
+validation → risk policy → merchant approval → action executor →
+Razorpay → verification → audit record` — and the LLM **never** executes a
+financial action or calls Razorpay directly; it only ever supplies
+explanatory text. **Bulk refunds, payment capture, payment links,
+settlement operations, and any automatic/unapproved execution are not
+implemented and are explicitly out of scope.** See
 [Development Status](#development-status) below and
 [docs/architecture](docs/architecture) for details.
 
@@ -58,11 +58,13 @@ apps/web            Merchant dashboard (Next.js)
 apps/api             Backend/API service
 packages/agent       AI agent runtime and orchestration
 packages/tools        Explicit typed tools the agent calls
+packages/detection    Deterministic anomaly detection engine
+packages/actions      Guarded recommendation/approval/action executor
 packages/razorpay    Razorpay integration adapter
 packages/database    Database client/schema layer
 packages/types        Shared TypeScript types
 packages/ui           Shared UI components
-workers/investigator  Background investigation worker
+workers/investigator  Background detection/investigation worker
 ```
 
 Key principles: the agent calls explicit typed tools (not a single giant
@@ -113,9 +115,30 @@ conclusions are backed by structured evidence. Full details in
       or manual (`run detect`) invocation
 - [x] In-app issue notifications (new/escalated only, deduped per session —
       no email/Slack/SMS)
-- [ ] Financial safety / guardrail system for autonomous actions (no such actions exist yet)
-- [ ] Full audit logging of agent runs (investigations run in-process today; a persisted run log is a later phase)
-- [ ] Merchant approval workflows, production authentication, real (non-in-app) notifications
+- [x] Guarded recommendations (`packages/actions`) — `REFUND_PAYMENT` and
+      `NO_ACTION`, deterministic risk policy (LOW/MEDIUM/HIGH), server-side
+      eligibility validation, bounded expiration
+- [x] Mandatory merchant approval — every financial action requires an
+      explicit `POST /recommendations/:id/approve`; no code path (agent,
+      worker, detector, frontend) can execute one without it
+- [x] Refund executor (`packages/actions`) — extends the existing
+      `packages/razorpay` adapter (no second HTTP client), re-validates
+      against Razorpay's _live_ payment state immediately before executing,
+      verifies the created refund before ever reporting success
+- [x] Deterministic idempotency (`paysherlock-refund-<recommendationId>`)
+      and database-level double-approval protection (atomic conditional
+      updates) — a retry or a race can never create two refunds
+- [x] Append-only audit trail (`AuditEvent`) — recommendation
+      created/approved/rejected, action started/succeeded/failed
+- [x] Recommendation/Action API (`GET/POST /recommendations*`,
+      `GET /actions/:id`), all merchant-scoped server-side
+- [x] Frontend: recommendation card with an explicit confirmation dialog
+      ("Confirm Refund", never "OK"/"Continue"), success/failure states,
+      and a real recommendation-history page (`/recommendations`)
+- [ ] Bulk refunds, payment capture, payment links, settlement operations
+- [ ] Merchant approval _workflows_ beyond single-click approve/reject (e.g.
+      multi-approver), production authentication, real (non-in-app)
+      notifications
 
 ### Local Setup
 
@@ -126,9 +149,16 @@ pnpm --filter @paysherlock/database run db:migrate:dev
 ```
 
 Working: `pnpm build`, `pnpm lint`, `pnpm typecheck`, `pnpm format:check`,
-`pnpm test` (239 tests across the Razorpay adapter, database layer, tools,
-agent, detection engine, API, web frontend, and detection worker — run via
-Turborepo, no AI credentials or live database required for the test suite).
+`pnpm test` (329 tests across the Razorpay adapter, database layer, tools,
+agent, detection engine, actions/recommendation layer, API, web frontend,
+and detection worker — run via Turborepo, no AI credentials, live
+database, or live Razorpay credentials required). The Phase 5 evaluation
+scenarios (A–H:
+valid refund, already-refunded, over-limit amount, double approval,
+provider failure, expired recommendation, merchant isolation, retry) run
+as part of `pnpm --filter @paysherlock/api run test`
+(`src/__tests__/phase5Evaluation.test.ts`) against a synthetic in-memory
+database and a mocked Razorpay client — never live credentials.
 
 `pnpm --filter @paysherlock/api run dev` starts the API on `PORT` (default
 `4000`) — by default with `AI_PROVIDER=deterministic`, so `POST
@@ -155,13 +185,19 @@ an issue appear without waiting for the schedule. `pnpm --filter
 ## Security Note
 
 This project handles financial data and payment provider credentials.
-Razorpay is used in **Test Mode only** — never live/production credentials.
+Razorpay is used in **Test Mode only** — never live/production credentials
+(the Phase 5 refund executor has no code-level "live vs. test" switch of
+its own; this is an operational/credential discipline, enforced by which
+`RAZORPAY_KEY_ID`/`RAZORPAY_KEY_SECRET` are configured, not by the code).
 Secrets are never committed — see `.env.example` for the required
 environment variables and `AGENTS.md` for the full security and
 financial-safety requirements. All Razorpay API calls happen server-side;
-webhook signatures are verified before any data is processed. No
-AI-initiated financial action will ever execute without an explicit
-merchant approval step (no such action exists yet — see Development Status).
+webhook signatures are verified before any data is processed. **No
+AI-initiated financial action ever executes without an explicit merchant
+approval step** — `POST /recommendations/:id/approve` is the only code
+path that can reach Razorpay's refund endpoint; see
+[docs/decisions/0005](docs/decisions/0005-guarded-actions.md) for the full
+trace and the tests that verify no bypass exists.
 
 ## Roadmap
 
@@ -172,7 +208,10 @@ merchant approval step (no such action exists yet — see Development Status).
    bounded investigation loop, evidence-backed results (read-only).
 4. **Phase 3 — Investigation Command Center** _(done)_: merchant
    frontend, real evidence/hypothesis/investigation UI, `GET /overview`.
-5. **Phase 4 — Proactive Payment Intelligence** _(current)_: deterministic
+5. **Phase 4 — Proactive Payment Intelligence** _(done)_: deterministic
    anomaly detection, persisted issues, automatic (existing-engine)
    investigation triggering, detection worker, in-app notifications.
-6. **Phase 5**: guardrails, approvals, bounded actions, audit logging.
+6. **Phase 5 — Guarded Recommendations & Actions** _(current)_: a
+   deterministically-validated, merchant-approved refund action — the
+   first (and, for now, only) real financial action, with full
+   idempotency, audit trail, and stale-state re-validation.

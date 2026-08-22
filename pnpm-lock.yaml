@@ -35,6 +35,9 @@ importers:
       '@fastify/cors':
         specifier: ^10.0.0
         version: 10.1.0
+      '@paysherlock/actions':
+        specifier: workspace:*
+        version: link:../../packages/actions
       '@paysherlock/agent':
         specifier: workspace:*
         version: link:../../packages/agent
@@ -150,6 +153,28 @@ importers:
         version: 5.9.3
       vitest:
         specifier: ^2.1.9
+        version: 2.1.9(@types/node@22.20.1)(jsdom@30.0.1)(lightningcss@1.33.0)(supports-color@7.2.0)
+
+  packages/actions:
+    dependencies:
+      '@paysherlock/database':
+        specifier: workspace:*
+        version: link:../database
+      '@paysherlock/razorpay':
+        specifier: workspace:*
+        version: link:../razorpay
+      '@paysherlock/types':
+        specifier: workspace:*
+        version: link:../types
+      zod:
+        specifier: ^3.24.0
+        version: 3.25.76
+    devDependencies:
+      typescript:
+        specifier: ^5.7.0
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.0
         version: 2.1.9(@types/node@22.20.1)(jsdom@30.0.1)(lightningcss@1.33.0)(supports-color@7.2.0)
 
   packages/agent:

@@ -1,0 +1,179 @@
+// A small, self-contained in-memory fake `Database` for the Phase 5
+// evaluation harness — deliberately separate from Phase 4's
+// fakeDatabase.ts (which extends packages/agent's payment/refund fake for
+// *aggregation* math). Phase 5's scenarios are about the
+// recommendation/approval/execution *state machine*, idempotency, and
+// merchant isolation — not statistical detection — so this fake only needs
+// simple keyed lookups/updates over `payment` (read-only, pre-seeded),
+// `recommendation`, `action`, and `auditEvent`. No real customer data;
+// every row is synthetic and supplied by the calling scenario.
+
+export interface FakePaymentRow {
+  id: string;
+  merchantId: string;
+  razorpayPaymentId: string;
+  amount: number;
+  amountRefunded: number;
+  currency: string;
+  captured: boolean;
+}
+
+interface WhereClause {
+  id?: string;
+  merchantId?: string;
+  recommendationId?: string;
+  status?: string | { in: string[] };
+  expiresAt?: unknown;
+  OR?: unknown;
+}
+
+function matchesStatus(status: string, clause: WhereClause["status"]): boolean {
+  if (clause === undefined) return true;
+  if (typeof clause === "string") return status === clause;
+  return clause.in.includes(status);
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function matchesWhere(row: Record<string, any>, where: WhereClause): boolean {
+  if (where.id !== undefined && row.id !== where.id) return false;
+  if (where.merchantId !== undefined && row.merchantId !== where.merchantId) return false;
+  if (where.recommendationId !== undefined && row.recommendationId !== where.recommendationId) {
+    return false;
+  }
+  if (!matchesStatus(row.status, where.status)) return false;
+  // `expiresAt`/`OR` (the approval expiry condition) are evaluated by the
+  // caller via a pre-filtered `updateMany` — see note below; this fake
+  // treats an explicit OR-on-expiresAt clause as "not expired" by checking
+  // the row's own expiresAt directly, matching Postgres semantics closely
+  // enough for these scenarios (expiresAt null or in the future).
+  if (where.OR !== undefined) {
+    const expiresAt = row.expiresAt as Date | null;
+    const notExpired = expiresAt === null || expiresAt.getTime() > Date.now();
+    if (!notExpired) return false;
+  }
+  return true;
+}
+
+/** Builds the fake Database. `clock` controls `createdAt`/`updatedAt` so a
+ * scenario can simulate distinct points in time deterministically. */
+export function createPhase5FakeDatabase(
+  payments: FakePaymentRow[],
+  clock: () => Date = () => new Date(),
+) {
+  const paymentsById = new Map(payments.map((p) => [p.id, p]));
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const recommendations: Record<string, any>[] = [];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const actions: Record<string, any>[] = [];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const auditEvents: Record<string, any>[] = [];
+  let recCounter = 0;
+  let actionCounter = 0;
+  let auditCounter = 0;
+
+  return {
+    payment: {
+      findUnique: ({ where }: { where: { id: string } }) =>
+        Promise.resolve(paymentsById.get(where.id) ?? null),
+    },
+    recommendation: {
+      findFirst: ({ where }: { where: WhereClause }) =>
+        Promise.resolve(recommendations.find((row) => matchesWhere(row, where)) ?? null),
+      findMany: ({ where, take }: { where?: WhereClause; take?: number }) => {
+        let rows = recommendations.filter((row) => matchesWhere(row, where ?? {}));
+        rows = [...rows].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+        if (take !== undefined) rows = rows.slice(0, take);
+        return Promise.resolve(rows);
+      },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      create: ({ data }: { data: Record<string, any> }) => {
+        recCounter += 1;
+        const now = clock();
+        const row = {
+          issueId: null,
+          investigationId: null,
+          targetPaymentId: null,
+          amountMinorUnits: null,
+          currency: null,
+          approvedAt: null,
+          rejectedAt: null,
+          expiresAt: null,
+          ...data,
+          id: `fake-rec-${recCounter}`,
+          createdAt: now,
+          updatedAt: now,
+        };
+        recommendations.push(row);
+        return Promise.resolve(row);
+      },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      update: ({ where, data }: { where: { id: string }; data: Record<string, any> }) => {
+        const row = recommendations.find((r) => r.id === where.id);
+        if (!row) throw new Error(`fake recommendation "${where.id}" not found`);
+        Object.assign(row, data, { updatedAt: clock() });
+        return Promise.resolve(row);
+      },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      updateMany: ({ where, data }: { where: WhereClause; data: Record<string, any> }) => {
+        let count = 0;
+        for (const row of recommendations) {
+          if (!matchesWhere(row, where)) continue;
+          Object.assign(row, data, { updatedAt: clock() });
+          count += 1;
+        }
+        return Promise.resolve({ count });
+      },
+    },
+    action: {
+      findFirst: ({ where }: { where: WhereClause }) =>
+        Promise.resolve(actions.find((row) => matchesWhere(row, where)) ?? null),
+      findUnique: ({ where }: { where: { recommendationId: string } }) =>
+        Promise.resolve(
+          actions.find((row) => row.recommendationId === where.recommendationId) ?? null,
+        ),
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      create: ({ data }: { data: Record<string, any> }) => {
+        actionCounter += 1;
+        const now = clock();
+        const row = {
+          paymentId: null,
+          amountMinorUnits: null,
+          currency: null,
+          providerReference: null,
+          providerStatus: null,
+          errorCode: null,
+          errorMessage: null,
+          approvedAt: null,
+          startedAt: null,
+          completedAt: null,
+          ...data,
+          id: `fake-action-${actionCounter}`,
+          createdAt: now,
+          updatedAt: now,
+        };
+        actions.push(row);
+        return Promise.resolve(row);
+      },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      update: ({ where, data }: { where: { id: string }; data: Record<string, any> }) => {
+        const row = actions.find((r) => r.id === where.id);
+        if (!row) throw new Error(`fake action "${where.id}" not found`);
+        Object.assign(row, data, { updatedAt: clock() });
+        return Promise.resolve(row);
+      },
+    },
+    auditEvent: {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      create: ({ data }: { data: Record<string, any> }) => {
+        auditCounter += 1;
+        const row = { ...data, id: `fake-audit-${auditCounter}`, createdAt: clock() };
+        auditEvents.push(row);
+        return Promise.resolve(row);
+      },
+      findMany: () => Promise.resolve([...auditEvents]),
+    },
+    // Test-only accessor — never part of the real Database shape.
+    __auditEvents: auditEvents,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  } as any;
+}

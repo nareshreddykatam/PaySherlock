@@ -22,6 +22,14 @@ export const InvestigationRequestSchema = z.object({
   merchantId: z.string().min(1),
   timeRange: TimeRangeSchema.optional(),
   context: z.string().max(2000).optional(),
+  /** Phase 5: when a merchant investigates a specific payment (e.g. from
+   * the Payments page), this carries that payment's internal id through so
+   * apps/api can — only after the investigation completes, and only via
+   * packages/actions' deterministic validation — offer a REFUND_PAYMENT
+   * recommendation for that exact payment. `runInvestigation` itself never
+   * reads this field; it exists purely to be threaded through to the
+   * recommendation-generation step. Never used to scope tool queries. */
+  targetPaymentId: z.string().min(1).optional(),
 });
 export type InvestigationRequest = z.infer<typeof InvestigationRequestSchema>;
 

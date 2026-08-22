@@ -48,7 +48,7 @@ export function PaymentDetailDrawer({ payment, onClose }: PaymentDetailDrawerPro
             <Link
               href={`/investigate?q=${encodeURIComponent(
                 `Investigate payment ${payment.razorpayPaymentId}`,
-              )}`}
+              )}&paymentId=${encodeURIComponent(payment.id)}`}
               className="text-sm font-medium text-emerald hover:text-emerald-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-strong rounded-sm"
             >
               Investigate this payment →

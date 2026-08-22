@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { buildServer } from "../server.js";
-import { createMockDb, noopGetOverview, noopRunInvestigation } from "./fixtures.js";
+import {
+  createMockDb,
+  noopApproveRecommendation,
+  noopGetOverview,
+  noopRejectRecommendation,
+  noopRetryRecommendation,
+  noopRunInvestigation,
+} from "./fixtures.js";
 
 const issueRowFixture = {
   id: "issue-1",
@@ -35,6 +42,9 @@ function buildApp(db: ReturnType<typeof createMockDb>) {
     webhookSecret: "whsec_test",
     runInvestigation: noopRunInvestigation(),
     getOverview: noopGetOverview(),
+    approveRecommendation: noopApproveRecommendation(),
+    rejectRecommendation: noopRejectRecommendation(),
+    retryRecommendation: noopRetryRecommendation(),
   });
 }
 

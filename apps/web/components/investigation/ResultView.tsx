@@ -1,17 +1,31 @@
-import type { InvestigationResult } from "@paysherlock/types";
+import { useState } from "react";
+import type { InvestigationResult, Recommendation } from "@paysherlock/types";
 import { RootCauseCard } from "./RootCauseCard";
 import { BusinessImpactCard } from "./BusinessImpactCard";
 import { EvidenceList } from "./EvidenceList";
 import { HypothesisList } from "./HypothesisList";
 import { QuestionForm } from "./QuestionForm";
+import { RecommendationCard } from "@/components/recommendation/RecommendationCard";
 
 export interface ResultViewProps {
   result: InvestigationResult;
+  /** Present whenever the API returned one alongside the investigation
+   * (Phase 5) — absent for read-only views that only ever show a past
+   * InvestigationResult without its own recommendation lifecycle (e.g. the
+   * History drawer). Never fabricated on the frontend. */
+  recommendation?: Recommendation | null;
   onFollowUp: (question: string) => void;
   followUpDisabled?: boolean;
 }
 
-export function ResultView({ result, onFollowUp, followUpDisabled }: ResultViewProps) {
+export function ResultView({
+  result,
+  recommendation,
+  onFollowUp,
+  followUpDisabled,
+}: ResultViewProps) {
+  const [currentRecommendation, setCurrentRecommendation] = useState(recommendation ?? null);
+
   return (
     <div className="flex flex-col gap-6">
       <div>
@@ -26,6 +40,13 @@ export function ResultView({ result, onFollowUp, followUpDisabled }: ResultViewP
         <RootCauseCard result={result} />
         {result.businessImpact ? <BusinessImpactCard impact={result.businessImpact} /> : null}
       </div>
+
+      {currentRecommendation && currentRecommendation.type === "REFUND_PAYMENT" ? (
+        <RecommendationCard
+          recommendation={currentRecommendation}
+          onChange={setCurrentRecommendation}
+        />
+      ) : null}
 
       <EvidenceList evidence={result.evidence} />
       <HypothesisList hypotheses={result.hypotheses} />

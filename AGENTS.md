@@ -15,6 +15,7 @@ apps/api            Backend/API service
 packages/agent      AI agent runtime and orchestration
 packages/tools       Explicit typed tools the agent calls
 packages/detection  Deterministic anomaly detection engine (Phase 4)
+packages/actions    Guarded recommendation/approval/action executor (Phase 5)
 packages/razorpay   Razorpay integration adapter
 packages/database   Database client/schema layer (Prisma + PostgreSQL)
 packages/types       Shared TypeScript types
@@ -26,8 +27,33 @@ scripts/             Repo-level scripts
 
 This is a pnpm + Turborepo monorepo. `packages/database`, `packages/razorpay`,
 `packages/types`, `packages/tools`, `packages/agent`, `packages/detection`,
-`apps/api`, `apps/web`, and `workers/investigator` are implemented
-(Phases 0–4). `packages/ui` is still a placeholder.
+`packages/actions`, `apps/api`, `apps/web`, and `workers/investigator` are
+implemented (Phases 0–5). `packages/ui` is still a placeholder.
+
+## Guarded recommendations & actions (Phase 5)
+
+- **The LLM never executes a financial action, and never calls Razorpay.**
+  The one-way path is: AI-influenced recommendation candidate →
+  `packages/actions`' deterministic validation → deterministic risk policy
+  → persisted `PENDING_APPROVAL` `Recommendation` → explicit merchant
+  approval (`POST /recommendations/:id/approve`) → `Action` executor →
+  `packages/razorpay`. Do not add any path that skips the approval step,
+  including from a detector, the worker, or the agent.
+- `riskLevel` (`LOW`/`MEDIUM`/`HIGH`) is always computed by
+  `packages/actions/src/policy/riskPolicy.ts` — never accept a
+  model-supplied or client-supplied risk level.
+- Every refund is re-validated against Razorpay's **live** payment state
+  immediately before execution (`packages/actions/src/refund/executeRefund.ts`)
+  — never trust a cached/stale local or frontend amount.
+- Idempotency is mandatory: an `Action`'s `idempotencyKey` is derived from
+  its `Recommendation`'s own id and is reused verbatim on any retry — never
+  a fresh key per attempt. Double-approval protection is a single atomic
+  conditional `updateMany` (`packages/database/src/upsert/recommendation.ts`),
+  not a check-then-write.
+- `packages/actions` must never depend on `@paysherlock/agent` — same
+  boundary discipline as `packages/detection`.
+- See [docs/decisions/0005](docs/decisions/0005-guarded-actions.md) for the
+  full recommendation/action state machines and reasoning.
 
 ## Detection vs. investigation (Phase 4)
 
@@ -105,10 +131,21 @@ This is a pnpm + Turborepo monorepo. `packages/database`, `packages/razorpay`,
 ## Financial Safety Requirements
 
 - No code path may execute a financial action (transfer, refund, payout,
-  trade) without going through the guardrail → merchant-approval → audit-log
-  flow described above. This applies even to seemingly low-risk actions.
-- Do not give the agent direct, unmediated write access to payment provider
-  mutation endpoints.
+  trade) without going through the recommendation → deterministic
+  validation → risk policy → merchant approval → action executor →
+  audit-log flow described above. This applies even to seemingly low-risk
+  actions. This is now concretely implemented for refunds (Phase 5) — see
+  `packages/actions` and `apps/api/src/services/recommendationService.ts`.
+- Do not give the agent (or a detector, or the worker) direct, unmediated
+  write access to payment provider mutation endpoints. Only
+  `packages/actions/src/refund/executeRefund.ts` calls
+  `RazorpayClient.refunds.create`, and only after a persisted `APPROVED`
+  transition.
+- Keep the action catalog small and explicit
+  (`packages/actions/src/registry/actionTypes.ts`). Do not add a new
+  financial action type without also adding its own eligibility
+  validation, risk policy handling, and executor — never generalize to "any
+  action" for convenience.
 
 ## Testing Expectations
 
@@ -161,7 +198,11 @@ not require changes outside that package and its interface consumers.
 ## Forbidden Practices
 
 - Fake/demo data standing in for real integrations.
-- Unrestricted or "convenience" financial actions.
+- Unrestricted or "convenience" financial actions — every financial action
+  must go through the full recommendation/approval/audit flow, with no
+  shortcut for "trusted" callers.
+- Any code path where a detector, the worker, the agent, or the frontend
+  executes a financial action without a prior, persisted merchant approval.
 - Tight coupling to a single AI provider or to Razorpay outside its adapter.
 - Exposing model chain-of-thought in the UI.
 - Overengineering: unnecessary microservices, premature event buses, empty

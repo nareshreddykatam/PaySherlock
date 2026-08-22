@@ -3,6 +3,7 @@ import { RazorpayClient } from "../client.js";
 import {
   RazorpayApiError,
   RazorpayConfigError,
+  RazorpayInvalidIdempotencyKeyError,
   RazorpayMalformedResponseError,
 } from "../errors.js";
 
@@ -99,5 +100,66 @@ describe("RazorpayClient payments.fetch", () => {
     const failure = await client.payments.fetch("pay_x").catch((error: unknown) => error);
     expect(failure).toBeInstanceOf(RazorpayApiError);
     expect((failure as RazorpayApiError).status).toBe(401);
+  });
+});
+
+describe("RazorpayClient refunds.create", () => {
+  const client = new RazorpayClient({ keyId: "rzp_test_key", keySecret: "shh_secret" });
+  const VALID_IDEMPOTENCY_KEY = "refund-action-cid12345";
+
+  it("sends the idempotency header and normalizes a valid response", async () => {
+    const fetchMock = mockFetchOnce({
+      ok: true,
+      body: JSON.stringify({
+        id: "rfnd_test0000000001",
+        entity: "refund",
+        amount: 240000,
+        currency: "INR",
+        payment_id: "pay_test0000000001",
+        status: "processed",
+        created_at: 1767000000,
+      }),
+    });
+
+    const refund = await client.refunds.create(
+      "pay_test0000000001",
+      { amountMinorUnits: 240000 },
+      VALID_IDEMPOTENCY_KEY,
+    );
+
+    expect(refund.id).toBe("rfnd_test0000000001");
+    expect(refund.status).toBe("processed");
+
+    const [url, requestInit] = fetchMock.mock.calls[0]!;
+    expect(String(url)).toContain("/payments/pay_test0000000001/refund");
+    expect(requestInit.method).toBe("POST");
+    expect(requestInit.headers["X-Refund-Idempotency"]).toBe(VALID_IDEMPOTENCY_KEY);
+    expect(JSON.parse(requestInit.body as string)).toEqual({ amount: 240000 });
+  });
+
+  it("rejects an idempotency key that is too short or has invalid characters, before ever calling fetch", async () => {
+    const fetchMock = mockFetchOnce({ ok: true, body: "{}" });
+
+    await expect(
+      client.refunds.create("pay_x", { amountMinorUnits: 1000 }, "short"),
+    ).rejects.toThrow(RazorpayInvalidIdempotencyKeyError);
+    await expect(
+      client.refunds.create("pay_x", { amountMinorUnits: 1000 }, "has a space in it!"),
+    ).rejects.toThrow(RazorpayInvalidIdempotencyKeyError);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("throws RazorpayApiError with the upstream status when Razorpay rejects the refund", async () => {
+    mockFetchOnce({
+      ok: false,
+      status: 400,
+      body: JSON.stringify({ error: { description: "Refund amount exceeds refundable amount" } }),
+    });
+
+    const failure = await client.refunds
+      .create("pay_x", { amountMinorUnits: 999999999 }, VALID_IDEMPOTENCY_KEY)
+      .catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(RazorpayApiError);
+    expect((failure as RazorpayApiError).status).toBe(400);
   });
 });

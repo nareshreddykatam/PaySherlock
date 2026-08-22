@@ -27,11 +27,14 @@ model Merchant {
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
-  orders      Order[]
-  payments    Payment[]
-  refunds     Refund[]
-  settlements Settlement[]
-  issues      Issue[]
+  orders          Order[]
+  payments        Payment[]
+  refunds         Refund[]
+  settlements     Settlement[]
+  issues          Issue[]
+  recommendations Recommendation[]
+  actions         Action[]
+  auditEvents     AuditEvent[]
 
   @@map("merchants")
 }
@@ -117,8 +120,9 @@ model Payment {
   createdAt           DateTime      @default(now())
   updatedAt           DateTime      @updatedAt
 
-  refunds       Refund[]
-  paymentEvents PaymentEvent[]
+  refunds         Refund[]
+  paymentEvents   PaymentEvent[]
+  recommendations Recommendation[]
 
   @@index([merchantId, status])
   @@index([merchantId, razorpayCreatedAt])
@@ -275,12 +279,197 @@ model Issue {
   /// Safe (no stack trace) message when status is INVESTIGATION_FAILED.
   investigationError   String?
 
+  recommendations Recommendation[]
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([merchantId, status])
   @@index([merchantId, fingerprint])
   @@map("issues")
+}
+
+// --- Phase 5: Guarded Recommendations & Actions -----------------------------
+// See docs/decisions/0005-guarded-actions.md. Hard rule behind every field
+// below: the LLM never executes a financial action — it only ever supplies
+// explanatory text (`Recommendation.explanation`); type, riskLevel, amount,
+// and every state transition are computed/enforced by deterministic code.
+
+enum RecommendationType {
+  /// The only real financial action in Phase 5 — refund a specific payment
+  /// by a specific integer-minor-units amount, never "all payments" or an
+  /// unbounded amount.
+  REFUND_PAYMENT
+  /// PaySherlock investigated and is explicitly recommending *no* action —
+  /// a first-class, non-financial outcome, not a fallback.
+  NO_ACTION
+}
+
+enum RiskLevel {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum RecommendationStatus {
+  PENDING_APPROVAL
+  APPROVED
+  REJECTED
+  EXECUTING
+  SUCCEEDED
+  FAILED
+  EXPIRED
+}
+
+/// Execution-mechanical subset of the lifecycle — an Action row only ever
+/// exists once a recommendation has been approved (see docs/decisions for
+/// why this is a separate, narrower enum rather than reusing
+/// RecommendationStatus for both).
+enum ActionStatus {
+  APPROVED
+  EXECUTING
+  SUCCEEDED
+  FAILED
+}
+
+/// A PaySherlock-generated suggestion — never itself a command. Every
+/// financial recommendation (REFUND_PAYMENT) requires explicit merchant
+/// approval before packages/actions ever constructs a Razorpay request; a
+/// NO_ACTION recommendation never becomes an Action at all.
+model Recommendation {
+  id         String   @id @default(cuid())
+  merchant   Merchant @relation(fields: [merchantId], references: [id])
+  merchantId String
+
+  /// Set only for a recommendation tied to a Phase 4 automatic
+  /// investigation; the automatic detection→investigation path does not
+  /// currently generate recommendations itself (none of Phase 4's five
+  /// merchant-wide detectors identify a single actionable payment — see
+  /// docs/decisions) but the schema supports the link for a
+  /// merchant-initiated investigation that happens to reference an issue.
+  issue           Issue?  @relation(fields: [issueId], references: [id])
+  issueId         String?
+  /// The Phase 2 InvestigationResult.meta.investigationId this
+  /// recommendation was generated from — informational only; the full
+  /// result itself is not duplicated here (ask the investigation/issue
+  /// record for that), matching the "don't duplicate" guidance.
+  investigationId String?
+
+  type        RecommendationType
+  title       String
+  /// LLM-influenced explanatory prose — never parsed or trusted for a
+  /// decision; display-only.
+  explanation String
+
+  /// Deterministic policy output (packages/actions/src/policy) — never an
+  /// LLM judgment.
+  riskLevel RiskLevel
+  status    RecommendationStatus @default(PENDING_APPROVAL)
+
+  /// Our internal Payment.id (never a client-supplied Razorpay id at
+  /// creation time) — the specific payment this recommendation concerns.
+  /// Null for NO_ACTION.
+  payment          Payment? @relation(fields: [targetPaymentId], references: [id])
+  targetPaymentId  String?
+  amountMinorUnits Int?
+  currency         String?
+
+  action Action?
+
+  approvedAt DateTime?
+  rejectedAt DateTime?
+  /// Optional bounded validity window (Phase 5 brief section 28) — an
+  /// expired PENDING_APPROVAL recommendation can never transition to
+  /// APPROVED; a fresh investigation must generate a new one.
+  expiresAt  DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([merchantId, status])
+  @@map("recommendations")
+}
+
+/// The execution attempt for an approved recommendation — created exactly
+/// once, at approval time, and never again for that recommendation (a
+/// retry reuses this same row and its `idempotencyKey`, see
+/// docs/decisions). One-to-one with Recommendation by design: this is
+/// "how the approved action is being/was carried out", not a duplicate of
+/// "what was recommended and why" (that stays on Recommendation).
+model Action {
+  id               String         @id @default(cuid())
+  merchant         Merchant       @relation(fields: [merchantId], references: [id])
+  merchantId       String
+  recommendation   Recommendation @relation(fields: [recommendationId], references: [id])
+  recommendationId String         @unique
+
+  type   RecommendationType
+  status ActionStatus       @default(APPROVED)
+
+  paymentId        String?
+  amountMinorUnits Int?
+  currency         String?
+
+  /// Deterministic, derived from the *recommendation's* own id
+  /// (`paysherlock-refund-<recommendationId>`) — never a fresh random value
+  /// per attempt, so a retry with the same key can never create two
+  /// refunds. Unique-constrained as a second, database-level guarantee
+  /// alongside the application-level reuse.
+  idempotencyKey String @unique
+
+  /// Razorpay's own id for the created resource, e.g. `rfnd_xxx`.
+  providerReference String?
+  /// Razorpay's own status string at last check (e.g. "processed") — kept
+  /// separate from `status` so raw provider state is always inspectable.
+  providerStatus    String?
+
+  /// Safe (no stack trace, no request/response body, no credentials) error
+  /// metadata only — see docs/decisions on what audit/error fields may
+  /// never contain.
+  errorCode    String?
+  errorMessage String?
+
+  createdAt   DateTime  @default(now())
+  approvedAt  DateTime?
+  startedAt   DateTime?
+  completedAt DateTime?
+  updatedAt   DateTime  @updatedAt
+
+  @@index([merchantId, status])
+  @@map("actions")
+}
+
+enum AuditEventType {
+  RECOMMENDATION_CREATED
+  RECOMMENDATION_APPROVED
+  RECOMMENDATION_REJECTED
+  ACTION_STARTED
+  ACTION_SUCCEEDED
+  ACTION_FAILED
+}
+
+/// Append-only audit trail. Rows are never updated or deleted by
+/// application code — a changed situation always means a *new* event, not
+/// an edited old one (Phase 5 brief section 23).
+model AuditEvent {
+  id         String   @id @default(cuid())
+  merchant   Merchant @relation(fields: [merchantId], references: [id])
+  merchantId String
+
+  eventType        AuditEventType
+  recommendationId String?
+  actionId         String?
+
+  /// Small, safe, structured metadata only — e.g. `{"riskLevel":"MEDIUM"}`
+  /// or `{"errorCode":"BAD_REQUEST_ERROR"}`. Never secrets, credentials,
+  /// authorization headers, or raw provider request/response bodies.
+  metadata Json?
+
+  createdAt DateTime @default(now())
+
+  @@index([merchantId, createdAt])
+  @@index([recommendationId])
+  @@map("audit_events")
 }
 
 /// Normalized Razorpay Settlement. Schema only in Phase 1 — no

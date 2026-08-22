@@ -2,7 +2,14 @@ import { createHmac } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { Prisma } from "@paysherlock/database";
 import { buildServer } from "../server.js";
-import { createMockDb, noopGetOverview, noopRunInvestigation } from "./fixtures.js";
+import {
+  createMockDb,
+  noopApproveRecommendation,
+  noopGetOverview,
+  noopRejectRecommendation,
+  noopRetryRecommendation,
+  noopRunInvestigation,
+} from "./fixtures.js";
 
 const WEBHOOK_SECRET = "whsec_test_secret";
 
@@ -76,6 +83,9 @@ describe("POST /webhooks/razorpay", () => {
       webhookSecret: WEBHOOK_SECRET,
       runInvestigation: noopRunInvestigation(),
       getOverview: noopGetOverview(),
+      approveRecommendation: noopApproveRecommendation(),
+      rejectRecommendation: noopRejectRecommendation(),
+      retryRecommendation: noopRetryRecommendation(),
     });
     const body = paymentCapturedBody();
 
@@ -97,6 +107,9 @@ describe("POST /webhooks/razorpay", () => {
       webhookSecret: WEBHOOK_SECRET,
       runInvestigation: noopRunInvestigation(),
       getOverview: noopGetOverview(),
+      approveRecommendation: noopApproveRecommendation(),
+      rejectRecommendation: noopRejectRecommendation(),
+      retryRecommendation: noopRetryRecommendation(),
     });
     const body = "{not valid json";
 
@@ -122,6 +135,9 @@ describe("POST /webhooks/razorpay", () => {
       webhookSecret: WEBHOOK_SECRET,
       runInvestigation: noopRunInvestigation(),
       getOverview: noopGetOverview(),
+      approveRecommendation: noopApproveRecommendation(),
+      rejectRecommendation: noopRejectRecommendation(),
+      retryRecommendation: noopRetryRecommendation(),
     });
     const body = paymentCapturedBody();
 
@@ -157,6 +173,9 @@ describe("POST /webhooks/razorpay", () => {
       webhookSecret: WEBHOOK_SECRET,
       runInvestigation: noopRunInvestigation(),
       getOverview: noopGetOverview(),
+      approveRecommendation: noopApproveRecommendation(),
+      rejectRecommendation: noopRejectRecommendation(),
+      retryRecommendation: noopRetryRecommendation(),
     });
     const body = paymentCapturedBody({ eventId: "evt_dup" });
 
@@ -181,6 +200,9 @@ describe("POST /webhooks/razorpay", () => {
       webhookSecret: WEBHOOK_SECRET,
       runInvestigation: noopRunInvestigation(),
       getOverview: noopGetOverview(),
+      approveRecommendation: noopApproveRecommendation(),
+      rejectRecommendation: noopRejectRecommendation(),
+      retryRecommendation: noopRetryRecommendation(),
     });
     const body = unsupportedEventBody();
 
@@ -206,6 +228,9 @@ describe("POST /webhooks/razorpay", () => {
       webhookSecret: WEBHOOK_SECRET,
       runInvestigation: noopRunInvestigation(),
       getOverview: noopGetOverview(),
+      approveRecommendation: noopApproveRecommendation(),
+      rejectRecommendation: noopRejectRecommendation(),
+      retryRecommendation: noopRetryRecommendation(),
     });
     const body = paymentCapturedBody();
 

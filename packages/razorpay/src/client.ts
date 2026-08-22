@@ -1,5 +1,10 @@
 import type { z } from "zod";
-import { RazorpayApiError, RazorpayConfigError, RazorpayMalformedResponseError } from "./errors.js";
+import {
+  RazorpayApiError,
+  RazorpayConfigError,
+  RazorpayInvalidIdempotencyKeyError,
+  RazorpayMalformedResponseError,
+} from "./errors.js";
 import {
   RazorpayOrderEntitySchema,
   RazorpayOrderListSchema,
@@ -29,6 +34,12 @@ export interface RazorpayListParams {
 }
 
 const DEFAULT_BASE_URL = "https://api.razorpay.com/v1";
+
+/** Razorpay's own idempotency-key constraint for the refund endpoints
+ * (`X-Refund-Idempotency`): at least 10 characters, alphanumeric plus
+ * hyphen/underscore only.
+ * https://razorpay.com/docs/api/refunds/normal-refunds-idempotent/ */
+const IDEMPOTENCY_KEY_PATTERN = /^[A-Za-z0-9_-]{10,}$/;
 
 function safeJsonParse(text: string): unknown {
   try {
@@ -110,6 +121,52 @@ export class RazorpayClient {
     return parsed.data;
   }
 
+  private async post<T>(
+    path: string,
+    schema: z.ZodType<T>,
+    body: Record<string, unknown>,
+    headers?: Record<string, string>,
+  ): Promise<T> {
+    let response: Response;
+    try {
+      response = await fetch(`${this.baseUrl}${path}`, {
+        method: "POST",
+        headers: {
+          Authorization: this.authHeader(),
+          Accept: "application/json",
+          "Content-Type": "application/json",
+          ...headers,
+        },
+        body: JSON.stringify(body),
+      });
+    } catch (cause) {
+      throw new RazorpayApiError("Network error calling the Razorpay API", { cause });
+    }
+
+    const bodyText = await response.text();
+
+    if (!response.ok) {
+      throw new RazorpayApiError(`Razorpay API request failed with status ${response.status}`, {
+        status: response.status,
+        body: safeJsonParse(bodyText),
+      });
+    }
+
+    const json = safeJsonParse(bodyText);
+    if (json === undefined) {
+      throw new RazorpayMalformedResponseError("Razorpay API response was not valid JSON");
+    }
+
+    const parsed = schema.safeParse(json);
+    if (!parsed.success) {
+      throw new RazorpayMalformedResponseError(
+        "Razorpay API response did not match the expected shape",
+        { cause: parsed.error },
+      );
+    }
+    return parsed.data;
+  }
+
   readonly payments = {
     fetch: (paymentId: string): Promise<RazorpayPaymentEntity> =>
       this.get(`/payments/${encodeURIComponent(paymentId)}`, RazorpayPaymentEntitySchema),
@@ -132,5 +189,30 @@ export class RazorpayClient {
         RazorpayRefundListSchema,
         params,
       ),
+    /**
+     * The one write operation this client supports (Phase 5's single
+     * initial financial action). `idempotencyKey` is mandatory and always
+     * caller-supplied — this client never generates one itself, and never
+     * retries silently; callers (packages/actions) are responsible for
+     * reusing the *same* key across retries of the same logical refund. See
+     * docs/decisions.
+     */
+    create: async (
+      paymentId: string,
+      body: { amountMinorUnits: number; notes?: Record<string, string>; receipt?: string },
+      idempotencyKey: string,
+    ): Promise<RazorpayRefundEntity> => {
+      if (!IDEMPOTENCY_KEY_PATTERN.test(idempotencyKey)) {
+        throw new RazorpayInvalidIdempotencyKeyError(
+          "Refund idempotency key must be at least 10 characters and contain only letters, digits, hyphens, or underscores",
+        );
+      }
+      return this.post(
+        `/payments/${encodeURIComponent(paymentId)}/refund`,
+        RazorpayRefundEntitySchema,
+        { amount: body.amountMinorUnits, notes: body.notes, receipt: body.receipt },
+        { "X-Refund-Idempotency": idempotencyKey },
+      );
+    },
   };
 }
