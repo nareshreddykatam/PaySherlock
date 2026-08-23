@@ -15,6 +15,7 @@
     "ingest": "tsx src/scripts/ingest.ts",
     "eval:phase4": "tsx src/eval/cli.ts",
     "eval:phase6": "tsx src/eval/cli6.ts",
+    "eval:track03": "tsx src/eval/cliTrack03.ts",
     "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\""
   },
   "dependencies": {

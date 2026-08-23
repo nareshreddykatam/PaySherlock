@@ -1,4 +1,4 @@
-import type { Database, Payment, PaymentStatus } from "../client.js";
+import type { Database, Payment, PaymentMethod, PaymentStatus } from "../client.js";
 import { clampLimit, toPage, type CursorPageParams, type Page } from "./pagination.js";
 
 export interface ListPaymentsParams extends CursorPageParams {
@@ -42,4 +42,33 @@ export async function listPaymentFailures(
   params: Omit<ListPaymentsParams, "status"> = {},
 ) {
   return listPayments(db, { ...params, status: "FAILED" });
+}
+
+export interface ListCapturedPaymentsInWindowParams {
+  merchantId: string;
+  method: PaymentMethod;
+  start: Date;
+  end: Date;
+}
+
+/** Phase 8 (Track 03 revenue recovery): candidate-generation input — every
+ * CAPTURED payment of one method within a detection window, for one
+ * merchant. Deterministic ascending order (oldest first, tie-broken by id)
+ * so a caller applying batch limits over this list gets the same result on
+ * every run. Not paginated — recovery batches are bounded by their own
+ * maxCandidates/maxTotalAmount limits, not by this query's page size (see
+ * packages/actions' selectRecoveryCandidates). */
+export async function listCapturedPaymentsInWindow(
+  db: Database,
+  params: ListCapturedPaymentsInWindowParams,
+): Promise<Payment[]> {
+  return db.payment.findMany({
+    where: {
+      merchantId: params.merchantId,
+      method: params.method,
+      status: "CAPTURED",
+      razorpayCreatedAt: { gte: params.start, lte: params.end },
+    },
+    orderBy: [{ razorpayCreatedAt: "asc" }, { id: "asc" }],
+  });
 }

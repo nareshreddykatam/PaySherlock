@@ -1,12 +1,20 @@
 "use client";
 
+import { useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { useApiQuery } from "@/lib/api/useApiQuery";
-import { getIssue } from "@/lib/api/issues";
+import {
+  getIssue,
+  generateRecoveryBatch,
+  isNotEligibleForRecovery,
+  type RecoveryBatch,
+} from "@/lib/api/issues";
 import { ResultView } from "@/components/investigation/ResultView";
+import { RecommendationCard } from "@/components/recommendation/RecommendationCard";
 import { Badge } from "@/components/ui/Badge";
+import { Button } from "@/components/ui/Button";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { formatCompactINR } from "@/lib/formatters/currency";
@@ -18,6 +26,11 @@ import {
   STATUS_LABELS,
   STATUS_TONE,
 } from "@/lib/formatters/issue";
+
+const STOP_REASON_LABEL: Record<string, string> = {
+  max_candidates_reached: "Maximum candidate count reached",
+  max_amount_reached: "Maximum total recovery amount reached",
+};
 
 function isRateMetric(metric: string): boolean {
   return metric.includes("rate");
@@ -50,6 +63,31 @@ export default function IssueDetailPage() {
     loading,
     reload,
   } = useApiQuery(() => getIssue(params.id), [params.id]);
+
+  const [batch, setBatch] = useState<RecoveryBatch | null>(null);
+  const [batchPending, setBatchPending] = useState(false);
+  const [batchError, setBatchError] = useState<string | null>(null);
+
+  async function handleGenerateRecoveryBatch() {
+    setBatchPending(true);
+    setBatchError(null);
+    try {
+      setBatch(await generateRecoveryBatch(params.id));
+    } catch (err) {
+      setBatchError(
+        isNotEligibleForRecovery(err)
+          ? err.message
+          : err instanceof Error
+            ? err.message
+            : "Could not generate a recovery batch.",
+      );
+    } finally {
+      setBatchPending(false);
+    }
+  }
+
+  const canGenerateRecoveryBatch =
+    issue?.type === "PAYMENT_METHOD_DEGRADATION" && issue.status === "IDENTIFIED";
 
   return (
     <div className="flex flex-col gap-6">
@@ -150,6 +188,117 @@ export default function IssueDetailPage() {
               </div>
             )}
           </section>
+
+          {canGenerateRecoveryBatch ? (
+            <section className="flex flex-col gap-4">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <h2 className="text-lg font-medium text-ink">Revenue Recovery</h2>
+                {!batch ? (
+                  <Button onClick={handleGenerateRecoveryBatch} disabled={batchPending}>
+                    {batchPending ? "Scanning affected payments…" : "Generate Recovery Batch"}
+                  </Button>
+                ) : null}
+              </div>
+
+              {batchError ? (
+                <p role="alert" className="text-sm text-red">
+                  {batchError}
+                </p>
+              ) : null}
+
+              {batch ? (
+                <>
+                  <div className="rounded-lg border border-border bg-surface p-6">
+                    <p className="text-sm text-ink-muted">
+                      Payments captured during the degradation window (
+                      {formatDateTime(batch.windowStart)} – {formatDateTime(batch.windowEnd)}) that
+                      remain eligible for a compensating refund, subject to the same deterministic
+                      eligibility rules as a single-payment recommendation.
+                    </p>
+                    <dl className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-4">
+                      <div>
+                        <dt className="text-xs font-semibold uppercase tracking-wide text-ink-faint">
+                          Candidates scanned
+                        </dt>
+                        <dd className="mt-1 text-lg font-semibold tabular-nums text-ink">
+                          {batch.candidatesScanned}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt className="text-xs font-semibold uppercase tracking-wide text-ink-faint">
+                          Eligible
+                        </dt>
+                        <dd className="mt-1 text-lg font-semibold tabular-nums text-ink">
+                          {batch.eligibleCount}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt className="text-xs font-semibold uppercase tracking-wide text-ink-faint">
+                          Rejected
+                        </dt>
+                        <dd className="mt-1 text-lg font-semibold tabular-nums text-ink">
+                          {batch.rejectedCount}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt className="text-xs font-semibold uppercase tracking-wide text-ink-faint">
+                          Proposed recovery
+                        </dt>
+                        <dd className="mt-1 text-lg font-semibold tabular-nums text-ink">
+                          {formatCompactINR(batch.amountEligibleMinorUnits)}
+                        </dd>
+                      </div>
+                    </dl>
+                    <dl className="mt-4 grid grid-cols-2 gap-4 border-t border-border pt-4 sm:grid-cols-3">
+                      <div>
+                        <dt className="text-xs font-semibold uppercase tracking-wide text-ink-faint">
+                          Max candidates
+                        </dt>
+                        <dd className="mt-1 text-sm tabular-nums text-ink-muted">
+                          {batch.limits.maxCandidates}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt className="text-xs font-semibold uppercase tracking-wide text-ink-faint">
+                          Max batch amount
+                        </dt>
+                        <dd className="mt-1 text-sm tabular-nums text-ink-muted">
+                          {formatCompactINR(batch.limits.maxTotalAmountMinorUnits)}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt className="text-xs font-semibold uppercase tracking-wide text-ink-faint">
+                          Stopping rule triggered
+                        </dt>
+                        <dd className="mt-1 text-sm text-ink-muted">
+                          {batch.stoppedReason ? STOP_REASON_LABEL[batch.stoppedReason] : "None"}
+                        </dd>
+                      </div>
+                    </dl>
+                  </div>
+
+                  {batch.recommendations.length > 0 ? (
+                    <div className="flex flex-col gap-4">
+                      <p className="text-sm text-ink-muted">
+                        Each candidate below is its own recommendation and requires its own explicit
+                        approval — approving one never approves another.
+                      </p>
+                      {batch.recommendations.map((recommendation) => (
+                        <RecommendationCard
+                          key={recommendation.id}
+                          recommendation={recommendation}
+                        />
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="rounded-lg border border-border bg-surface p-6 text-sm text-ink-muted">
+                      No eligible recovery candidates were found for this window.
+                    </div>
+                  )}
+                </>
+              ) : null}
+            </section>
+          ) : null}
         </div>
       ) : null}
     </div>

@@ -11,6 +11,11 @@ import {
 const ListRecommendationsQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).optional(),
   cursor: z.string().min(1).optional(),
+  // Display/grouping filter only (e.g. "show this recovery batch's
+  // recommendations together") — never a security boundary. Merchant
+  // scoping still comes exclusively from resolveMerchantContext() below; a
+  // client supplying another merchant's issueId simply matches zero rows.
+  issueId: z.string().min(1).optional(),
 });
 
 /** Same `{error: {code, message}}` shape as the global error handler
@@ -44,6 +49,7 @@ export function registerRecommendationRoutes(app: FastifyInstance, deps: Resolve
       merchantId: merchant.id,
       limit: query.data.limit,
       cursor: query.data.cursor,
+      issueId: query.data.issueId,
     });
 
     return {

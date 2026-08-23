@@ -3,6 +3,7 @@ import { z } from "zod";
 import { getIssueById, listIssues, type Issue } from "@paysherlock/database";
 import { NotFoundError, ValidationError, type InvestigationResult } from "@paysherlock/types";
 import type { ResolvedServerDeps } from "../server.js";
+import { generateRecoveryBatch } from "../services/recoveryBatchService.js";
 
 const ListIssuesQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).optional(),
@@ -70,5 +71,28 @@ export function registerIssueRoutes(app: FastifyInstance, deps: ResolvedServerDe
       throw new NotFoundError(`Issue "${request.params.id}" was not found`);
     }
     return toIssueResponse(issue);
+  });
+
+  // Track 03 (AI Revenue Recovery): generates a bounded batch of
+  // individually-approvable REFUND_PAYMENT recommendations for this
+  // issue's affected payments. No body — the client cannot request a
+  // different merchant, issue, or batch size than what the server
+  // resolves; limits are fixed server-side (recoveryBatchService.ts).
+  // Creates recommendations but never approves or executes anything.
+  app.post<{ Params: { id: string } }>("/issues/:id/recovery-batch", async (request, reply) => {
+    const merchant = await deps.resolveMerchantContext();
+    const outcome = await generateRecoveryBatch(
+      { db: deps.db },
+      { merchantId: merchant.id, issueId: request.params.id },
+    );
+
+    if (outcome.kind === "issue_not_found") {
+      throw new NotFoundError(`Issue "${request.params.id}" was not found`);
+    }
+    if (outcome.kind === "not_eligible") {
+      void reply.status(409);
+      return { error: { code: "NOT_ELIGIBLE_FOR_RECOVERY", message: outcome.reason } };
+    }
+    return outcome.batch;
   });
 }

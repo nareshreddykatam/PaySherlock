@@ -8,12 +8,16 @@ import { apiFetch } from "./client";
 export interface GetRecommendationsParams {
   cursor?: string;
   limit?: number;
+  /** Track 03: fetch only the recommendations belonging to one recovery
+   * batch (grouped by the issue that triggered it). */
+  issueId?: string;
 }
 
 export async function getRecommendations(params: GetRecommendationsParams = {}) {
   const query = new URLSearchParams();
   if (params.cursor) query.set("cursor", params.cursor);
   if (params.limit) query.set("limit", String(params.limit));
+  if (params.issueId) query.set("issueId", params.issueId);
   const qs = query.toString();
 
   const raw = await apiFetch<unknown>(`/recommendations${qs ? `?${qs}` : ""}`);

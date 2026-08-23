@@ -5,6 +5,10 @@ export type RecommendationWithAction = Recommendation & { action: Action | null 
 
 export interface ListRecommendationsParams extends CursorPageParams {
   merchantId: string;
+  /** Phase 8: filter to recommendations grouped under one triggering issue
+   * (e.g. all recommendations a recovery batch created) — optional, never
+   * a substitute for merchantId scoping. */
+  issueId?: string;
 }
 
 export async function listRecommendations(
@@ -13,7 +17,7 @@ export async function listRecommendations(
 ): Promise<Page<RecommendationWithAction>> {
   const limit = clampLimit(params.limit);
   const rows = await db.recommendation.findMany({
-    where: { merchantId: params.merchantId },
+    where: { merchantId: params.merchantId, issueId: params.issueId },
     orderBy: [{ createdAt: "desc" }, { id: "desc" }],
     take: limit + 1,
     include: { action: true },
@@ -37,4 +41,25 @@ export async function getRecommendationById(
     where: { id: params.id, merchantId: params.merchantId },
     include: { action: true },
   });
+}
+
+export interface FindRecommendedPaymentIdsParams {
+  merchantId: string;
+  paymentIds: string[];
+}
+
+/** Phase 8 (Track 03 revenue recovery): duplicate-candidate prevention — a
+ * payment that already has ANY recommendation (regardless of status) is
+ * never offered again as a fresh recovery candidate, so a batch can never
+ * create two REFUND_PAYMENT recommendations for the same payment. */
+export async function findRecommendedPaymentIds(
+  db: Database,
+  params: FindRecommendedPaymentIdsParams,
+): Promise<Set<string>> {
+  if (params.paymentIds.length === 0) return new Set();
+  const rows = await db.recommendation.findMany({
+    where: { merchantId: params.merchantId, targetPaymentId: { in: params.paymentIds } },
+    select: { targetPaymentId: true },
+  });
+  return new Set(rows.map((row) => row.targetPaymentId).filter((id): id is string => id !== null));
 }

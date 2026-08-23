@@ -16,6 +16,11 @@ export interface FakePaymentRow {
   amountRefunded: number;
   currency: string;
   captured: boolean;
+  /** Optional — only Track 03's recovery-batch scenarios need these for
+   * listCapturedPaymentsInWindow's method/status/time-window filtering. */
+  method?: string;
+  status?: string;
+  razorpayCreatedAt?: Date;
 }
 
 interface WhereClause {
@@ -23,6 +28,9 @@ interface WhereClause {
   merchantId?: string;
   recommendationId?: string;
   status?: string | { in: string[] };
+  targetPaymentId?: string | { in: string[] };
+  method?: string;
+  razorpayCreatedAt?: { gte?: Date; lte?: Date };
   expiresAt?: unknown;
   OR?: unknown;
 }
@@ -33,6 +41,17 @@ function matchesStatus(status: string, clause: WhereClause["status"]): boolean {
   return clause.in.includes(status);
 }
 
+function matchesTargetPaymentId(
+  targetPaymentId: string | null | undefined,
+  clause: WhereClause["targetPaymentId"],
+): boolean {
+  if (clause === undefined) return true;
+  if (typeof clause === "string") return targetPaymentId === clause;
+  return (
+    targetPaymentId !== null && targetPaymentId !== undefined && clause.in.includes(targetPaymentId)
+  );
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function matchesWhere(row: Record<string, any>, where: WhereClause): boolean {
   if (where.id !== undefined && row.id !== where.id) return false;
@@ -41,6 +60,23 @@ function matchesWhere(row: Record<string, any>, where: WhereClause): boolean {
     return false;
   }
   if (!matchesStatus(row.status, where.status)) return false;
+  if (!matchesTargetPaymentId(row.targetPaymentId, where.targetPaymentId)) return false;
+  if (where.method !== undefined && row.method !== where.method) return false;
+  if (where.razorpayCreatedAt !== undefined) {
+    const createdAt = row.razorpayCreatedAt as Date;
+    if (
+      where.razorpayCreatedAt.gte &&
+      createdAt.getTime() < where.razorpayCreatedAt.gte.getTime()
+    ) {
+      return false;
+    }
+    if (
+      where.razorpayCreatedAt.lte &&
+      createdAt.getTime() > where.razorpayCreatedAt.lte.getTime()
+    ) {
+      return false;
+    }
+  }
   // `expiresAt`/`OR` (the approval expiry condition) are evaluated by the
   // caller via a pre-filtered `updateMany` — see note below; this fake
   // treats an explicit OR-on-expiresAt clause as "not expired" by checking
@@ -84,6 +120,18 @@ export function createPhase5FakeDatabase(
           return Promise.resolve(null);
         }
         return Promise.resolve(row);
+      },
+      // Track 03: backs listCapturedPaymentsInWindow. Deterministic
+      // ascending order (oldest first, tie-broken by id) — same contract
+      // the real Prisma query guarantees.
+      findMany: ({ where }: { where: WhereClause }) => {
+        let rows = payments.filter((row) => matchesWhere(row, where));
+        rows = [...rows].sort((a, b) => {
+          const aTime = (a.razorpayCreatedAt as Date | undefined)?.getTime() ?? 0;
+          const bTime = (b.razorpayCreatedAt as Date | undefined)?.getTime() ?? 0;
+          return aTime !== bTime ? aTime - bTime : a.id.localeCompare(b.id);
+        });
+        return Promise.resolve(rows);
       },
     },
     recommendation: {

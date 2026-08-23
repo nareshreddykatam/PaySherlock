@@ -10,3 +10,4 @@ export * from "./validation/recommendationValidation.js";
 export * from "./registry/actionTypes.js";
 export * from "./refund/executeRefund.js";
 export * from "./recommend/generateRecommendation.js";
+export * from "./recovery/selectRecoveryCandidates.js";
