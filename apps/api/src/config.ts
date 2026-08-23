@@ -19,6 +19,17 @@ const EnvSchema = z
     MAX_AGENT_STEPS: z.coerce.number().int().positive().default(8),
     // Browser origin allowed to call this API — apps/web's dev/deployed URL.
     CORS_ORIGIN: z.string().min(1).default("http://localhost:3000"),
+    // Phase 7: server-side-only switch that makes every route resolve the
+    // dedicated "PaySherlock Demo Merchant" instead of the default merchant
+    // — never a client-supplied value, never available in production (see
+    // the refinement below). Off by default. Deliberately NOT
+    // `z.coerce.boolean()`: that coerces the *string* "false" to `true`
+    // (any non-empty string is truthy), which would silently invert an
+    // explicit DEMO_MODE=false in .env.
+    DEMO_MODE: z
+      .enum(["true", "false"])
+      .default("false")
+      .transform((v) => v === "true"),
   })
   .superRefine((env, ctx) => {
     if (env.AI_PROVIDER === "anthropic" && (!env.AI_MODEL || !env.AI_API_KEY)) {
@@ -26,6 +37,13 @@ const EnvSchema = z
         code: z.ZodIssueCode.custom,
         path: ["AI_PROVIDER"],
         message: "AI_PROVIDER=anthropic requires AI_MODEL and AI_API_KEY to also be set",
+      });
+    }
+    if (env.DEMO_MODE && env.NODE_ENV === "production") {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["DEMO_MODE"],
+        message: "DEMO_MODE must never be enabled when NODE_ENV=production",
       });
     }
   });

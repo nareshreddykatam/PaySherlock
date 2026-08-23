@@ -1,8 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { resolveMerchant } from "@paysherlock/database";
 import { ValidationError } from "@paysherlock/types";
-import type { ServerDeps } from "../server.js";
+import type { ResolvedServerDeps } from "../server.js";
 import { generateRecommendationForInvestigation } from "../services/recommendationService.js";
 
 const CreateInvestigationSchema = z.object({
@@ -15,7 +14,7 @@ const CreateInvestigationSchema = z.object({
   targetPaymentId: z.string().min(1).optional(),
 });
 
-export function registerInvestigationRoutes(app: FastifyInstance, deps: ServerDeps): void {
+export function registerInvestigationRoutes(app: FastifyInstance, deps: ResolvedServerDeps): void {
   app.post("/investigations", async (request) => {
     const body = CreateInvestigationSchema.safeParse(request.body);
     if (!body.success) {
@@ -27,7 +26,7 @@ export function registerInvestigationRoutes(app: FastifyInstance, deps: ServerDe
     // Merchant scoping is derived server-side, never from client input —
     // CreateInvestigationSchema has no merchantId field for a client to
     // even attempt to supply one. See docs/decisions.
-    const merchant = await resolveMerchant(deps.db, {});
+    const merchant = await deps.resolveMerchantContext();
 
     const result = await deps.runInvestigation({
       question: body.data.question,

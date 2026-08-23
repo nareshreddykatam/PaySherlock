@@ -1,12 +1,11 @@
 import type { FastifyInstance } from "fastify";
-import { resolveMerchant } from "@paysherlock/database";
-import type { ServerDeps } from "../server.js";
+import type { ResolvedServerDeps } from "../server.js";
 
-export function registerOverviewRoutes(app: FastifyInstance, deps: ServerDeps): void {
+export function registerOverviewRoutes(app: FastifyInstance, deps: ResolvedServerDeps): void {
   app.get("/overview", async () => {
     // Same trusted, server-derived merchant scoping as every other route —
     // see docs/decisions.
-    const merchant = await resolveMerchant(deps.db, {});
+    const merchant = await deps.resolveMerchantContext();
     return deps.getOverview(merchant.id);
   });
 }

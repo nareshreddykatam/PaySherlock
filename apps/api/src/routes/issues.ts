@@ -1,8 +1,8 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { getIssueById, listIssues, resolveMerchant, type Issue } from "@paysherlock/database";
+import { getIssueById, listIssues, type Issue } from "@paysherlock/database";
 import { NotFoundError, ValidationError, type InvestigationResult } from "@paysherlock/types";
-import type { ServerDeps } from "../server.js";
+import type { ResolvedServerDeps } from "../server.js";
 
 const ListIssuesQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).optional(),
@@ -42,7 +42,7 @@ function toIssueResponse(issue: Issue) {
   };
 }
 
-export function registerIssueRoutes(app: FastifyInstance, deps: ServerDeps): void {
+export function registerIssueRoutes(app: FastifyInstance, deps: ResolvedServerDeps): void {
   app.get("/issues", async (request) => {
     const query = ListIssuesQuerySchema.safeParse(request.query);
     if (!query.success) {
@@ -53,7 +53,7 @@ export function registerIssueRoutes(app: FastifyInstance, deps: ServerDeps): voi
 
     // Merchant scoping is derived server-side, never from client input —
     // same trusted pattern as every other route. See docs/decisions.
-    const merchant = await resolveMerchant(deps.db, {});
+    const merchant = await deps.resolveMerchantContext();
     const page = await listIssues(deps.db, {
       merchantId: merchant.id,
       limit: query.data.limit,
@@ -64,7 +64,7 @@ export function registerIssueRoutes(app: FastifyInstance, deps: ServerDeps): voi
   });
 
   app.get<{ Params: { id: string } }>("/issues/:id", async (request) => {
-    const merchant = await resolveMerchant(deps.db, {});
+    const merchant = await deps.resolveMerchantContext();
     const issue = await getIssueById(deps.db, { id: request.params.id, merchantId: merchant.id });
     if (!issue) {
       throw new NotFoundError(`Issue "${request.params.id}" was not found`);

@@ -1,4 +1,9 @@
-import { getPrismaClient } from "@paysherlock/database";
+import {
+  DEMO_MERCHANT_MARKER,
+  DEMO_MERCHANT_NAME,
+  getPrismaClient,
+  resolveMerchant,
+} from "@paysherlock/database";
 import { createInvestigationRunner, createProvider } from "@paysherlock/agent";
 import { createToolRegistry } from "@paysherlock/tools";
 import { RazorpayClient } from "@paysherlock/razorpay";
@@ -36,10 +41,26 @@ async function main() {
     keySecret: config.RAZORPAY_KEY_SECRET,
   });
 
+  // Phase 7: the ONLY place merchant context is ever decided. DEMO_MODE is
+  // a server-side env var (rejected outright at config-load time if
+  // NODE_ENV=production — see config.ts) — a client can never request,
+  // toggle, or override this. Every route still calls the exact same
+  // deps.resolveMerchantContext() either way; only what config.ts allowed
+  // it to be constructed as differs.
+  const resolveMerchantContext =
+    config.NODE_ENV !== "production" && config.DEMO_MODE
+      ? () =>
+          resolveMerchant(db, {
+            razorpayAccountId: DEMO_MERCHANT_MARKER,
+            defaultName: DEMO_MERCHANT_NAME,
+          })
+      : undefined;
+
   const app = buildServer({
     db,
     webhookSecret: config.RAZORPAY_WEBHOOK_SECRET,
     corsOrigin: config.CORS_ORIGIN,
+    resolveMerchantContext,
     runInvestigation: (request) => investigationRunner(request, db),
     getOverview: (merchantId) => getOverview(db, merchantId),
     approveRecommendation: (params) =>

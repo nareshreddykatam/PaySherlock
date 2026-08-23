@@ -1,8 +1,8 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { listRecommendations, resolveMerchant } from "@paysherlock/database";
+import { listRecommendations } from "@paysherlock/database";
 import { NotFoundError, ValidationError } from "@paysherlock/types";
-import type { ServerDeps } from "../server.js";
+import type { ResolvedServerDeps } from "../server.js";
 import {
   getRecommendationResponseById,
   toRecommendationResponse,
@@ -30,7 +30,7 @@ function conflictBody(code: string, message: string, recommendation: unknown) {
  * Recommendation row the server already validated, not from the request
  * body (approve/reject/retry accept no body at all). See docs/decisions.
  */
-export function registerRecommendationRoutes(app: FastifyInstance, deps: ServerDeps): void {
+export function registerRecommendationRoutes(app: FastifyInstance, deps: ResolvedServerDeps): void {
   app.get("/recommendations", async (request) => {
     const query = ListRecommendationsQuerySchema.safeParse(request.query);
     if (!query.success) {
@@ -39,7 +39,7 @@ export function registerRecommendationRoutes(app: FastifyInstance, deps: ServerD
       );
     }
 
-    const merchant = await resolveMerchant(deps.db, {});
+    const merchant = await deps.resolveMerchantContext();
     const page = await listRecommendations(deps.db, {
       merchantId: merchant.id,
       limit: query.data.limit,
@@ -53,7 +53,7 @@ export function registerRecommendationRoutes(app: FastifyInstance, deps: ServerD
   });
 
   app.get<{ Params: { id: string } }>("/recommendations/:id", async (request) => {
-    const merchant = await resolveMerchant(deps.db, {});
+    const merchant = await deps.resolveMerchantContext();
     const recommendation = await getRecommendationResponseById(deps, {
       id: request.params.id,
       merchantId: merchant.id,
@@ -65,7 +65,7 @@ export function registerRecommendationRoutes(app: FastifyInstance, deps: ServerD
   });
 
   app.post<{ Params: { id: string } }>("/recommendations/:id/approve", async (request, reply) => {
-    const merchant = await resolveMerchant(deps.db, {});
+    const merchant = await deps.resolveMerchantContext();
     const outcome = await deps.approveRecommendation({
       id: request.params.id,
       merchantId: merchant.id,
@@ -94,7 +94,7 @@ export function registerRecommendationRoutes(app: FastifyInstance, deps: ServerD
   });
 
   app.post<{ Params: { id: string } }>("/recommendations/:id/reject", async (request, reply) => {
-    const merchant = await resolveMerchant(deps.db, {});
+    const merchant = await deps.resolveMerchantContext();
     const outcome = await deps.rejectRecommendation({
       id: request.params.id,
       merchantId: merchant.id,
@@ -115,7 +115,7 @@ export function registerRecommendationRoutes(app: FastifyInstance, deps: ServerD
   });
 
   app.post<{ Params: { id: string } }>("/recommendations/:id/retry", async (request, reply) => {
-    const merchant = await resolveMerchant(deps.db, {});
+    const merchant = await deps.resolveMerchantContext();
     const outcome = await deps.retryRecommendation({
       id: request.params.id,
       merchantId: merchant.id,

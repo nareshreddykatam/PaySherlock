@@ -1,4 +1,10 @@
-import type { Database, PaymentMethod, PaymentStatus } from "@paysherlock/database";
+import {
+  DEMO_MERCHANT_MARKER,
+  DEMO_MERCHANT_NAME,
+  type Database,
+  type PaymentMethod,
+  type PaymentStatus,
+} from "@paysherlock/database";
 
 // Deterministic synthetic demo data — the same "same time of day on
 // preceding days" shape packages/detection's baseline engine expects, but
@@ -8,9 +14,12 @@ import type { Database, PaymentMethod, PaymentStatus } from "@paysherlock/databa
 // end, not a scripted approximation of it. Every row is clearly synthetic
 // (id-prefixed `pay_demo_...`) and scoped to one dedicated demo merchant —
 // see seed.ts/reset.ts for how that scoping is enforced.
-
-export const DEMO_MERCHANT_MARKER = "demo_merchant";
-export const DEMO_MERCHANT_NAME = "PaySherlock Demo Merchant";
+//
+// DEMO_MERCHANT_MARKER/DEMO_MERCHANT_NAME are re-exported from
+// @paysherlock/database (Phase 7) so apps/api's DEMO_MODE resolver and this
+// seeder always target the exact same merchant identifier — never two
+// independently-defined "demo merchant" constants that could drift.
+export { DEMO_MERCHANT_MARKER, DEMO_MERCHANT_NAME };
 
 const HOUR_MS = 60 * 60 * 1000;
 const DAY_MS = 24 * HOUR_MS;

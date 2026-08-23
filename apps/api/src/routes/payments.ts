@@ -4,11 +4,10 @@ import {
   getPaymentById,
   getPaymentByRazorpayId,
   listPayments,
-  resolveMerchant,
   type Payment,
 } from "@paysherlock/database";
 import { NotFoundError, ValidationError } from "@paysherlock/types";
-import type { ServerDeps } from "../server.js";
+import type { ResolvedServerDeps } from "../server.js";
 
 const ListPaymentsQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).optional(),
@@ -38,7 +37,7 @@ function toPaymentResponse(payment: Payment) {
   };
 }
 
-export function registerPaymentRoutes(app: FastifyInstance, deps: ServerDeps): void {
+export function registerPaymentRoutes(app: FastifyInstance, deps: ResolvedServerDeps): void {
   app.get("/payments", async (request) => {
     const query = ListPaymentsQuerySchema.safeParse(request.query);
     if (!query.success) {
@@ -49,7 +48,7 @@ export function registerPaymentRoutes(app: FastifyInstance, deps: ServerDeps): v
 
     // Merchant scoping is derived server-side, never from client input —
     // same trusted pattern as every other route. See docs/decisions.
-    const merchant = await resolveMerchant(deps.db, {});
+    const merchant = await deps.resolveMerchantContext();
     const page = await listPayments(deps.db, {
       merchantId: merchant.id,
       limit: query.data.limit,
@@ -64,7 +63,7 @@ export function registerPaymentRoutes(app: FastifyInstance, deps: ServerDeps): v
 
   app.get<{ Params: { id: string } }>("/payments/:id", async (request) => {
     const { id } = request.params;
-    const merchant = await resolveMerchant(deps.db, {});
+    const merchant = await deps.resolveMerchantContext();
     const payment = id.startsWith("pay_")
       ? await getPaymentByRazorpayId(deps.db, id, merchant.id)
       : await getPaymentById(deps.db, id, merchant.id);

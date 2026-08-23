@@ -1,5 +1,14 @@
 import type { Database } from "../client.js";
 
+/** The one dedicated, isolated demo merchant used by `workers/investigator`'s
+ * `demo:seed`/`demo:reset`/`demo:run` scripts and (in DEMO_MODE) `apps/api`'s
+ * server-side merchant context — a single shared identifier so both never
+ * drift into seeding/resolving two different "demo" merchants. Never a real
+ * Razorpay account id (those are always `acc_...`), so this can never
+ * collide with a real merchant resolved from a webhook. */
+export const DEMO_MERCHANT_MARKER = "demo_merchant";
+export const DEMO_MERCHANT_NAME = "PaySherlock Demo Merchant";
+
 export interface ResolveMerchantParams {
   /** Razorpay's `account_id`, when known (e.g. from a webhook payload). */
   razorpayAccountId?: string | null;

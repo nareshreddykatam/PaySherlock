@@ -1,6 +1,6 @@
 import Fastify, { type FastifyInstance } from "fastify";
 import cors from "@fastify/cors";
-import type { Database } from "@paysherlock/database";
+import { resolveMerchant, type Database, type Merchant } from "@paysherlock/database";
 import type {
   InvestigationRequest,
   InvestigationResult,
@@ -47,7 +47,27 @@ export interface ServerDeps {
   retryRecommendation: (params: RecommendationScopeParams) => Promise<RecommendationActionOutcome>;
   /** Origin allowed to call this API from a browser (apps/web). */
   corsOrigin?: string;
+  /**
+   * Phase 7: resolves which Merchant every route acts as. Optional and
+   * defaulting to today's exact behavior (`resolveMerchant(db, {})`,
+   * i.e. the single default merchant) when omitted — existing tests that
+   * mock `db.merchant.*` directly keep working unchanged. `index.ts` (the
+   * real entrypoint) is the only place that ever overrides this, and only
+   * when `NODE_ENV !== "production" && DEMO_MODE === true`, to resolve the
+   * dedicated demo merchant instead. Never derived from a request — no
+   * route reads a merchant id from a query/body/header, and this function
+   * takes no request-derived arguments, so there is no way for a client to
+   * influence which merchant it resolves to.
+   */
+  resolveMerchantContext?: () => Promise<Merchant>;
 }
+
+/** What every route registrar actually receives: `resolveMerchantContext`
+ * resolved to its default when the caller of `buildServer` didn't supply
+ * one — routes never need to know whether it was overridden. */
+export type ResolvedServerDeps = ServerDeps & {
+  resolveMerchantContext: () => Promise<Merchant>;
+};
 
 // Request correlation (Phase 6 observability): every request gets an id —
 // the caller's own `X-Request-Id` if it looks safe to reuse, otherwise a
@@ -96,14 +116,23 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
   registerRawBodyCapture(app);
   registerErrorHandler(app);
 
+  const resolvedDeps: ResolvedServerDeps = {
+    ...deps,
+    resolveMerchantContext: deps.resolveMerchantContext ?? (() => resolveMerchant(deps.db, {})),
+  };
+
   registerHealthRoute(app);
-  registerPaymentRoutes(app, deps);
+  // Webhook processing resolves its merchant from the verified Razorpay
+  // payload (webhookProcessor.ts), never from resolvedDeps — deliberately
+  // still given the raw `deps`, not `resolvedDeps`, so it can never be
+  // pointed at the demo merchant.
   registerWebhookRoutes(app, deps);
-  registerInvestigationRoutes(app, deps);
-  registerOverviewRoutes(app, deps);
-  registerIssueRoutes(app, deps);
-  registerRecommendationRoutes(app, deps);
-  registerActionRoutes(app, deps);
+  registerPaymentRoutes(app, resolvedDeps);
+  registerInvestigationRoutes(app, resolvedDeps);
+  registerOverviewRoutes(app, resolvedDeps);
+  registerIssueRoutes(app, resolvedDeps);
+  registerRecommendationRoutes(app, resolvedDeps);
+  registerActionRoutes(app, resolvedDeps);
 
   return app;
 }
