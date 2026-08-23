@@ -89,6 +89,15 @@ export async function processWebhook(params: ProcessWebhookParams): Promise<Proc
   }
 
   try {
+    // A named payment/order/refund entity that failed schema validation
+    // (see normalizeWebhookEvent) must never be treated as if it simply
+    // wasn't present — that would upsert nothing yet still report success.
+    // Throwing here reuses the exact same failure path as an upsert error
+    // below: recorded, marked FAILED with a safe message, and rethrown so
+    // the response is a non-2xx Razorpay will retry.
+    if (normalized.entityValidationError) {
+      throw new ValidationError(normalized.entityValidationError);
+    }
     // Order before payment (payment upsert resolves its orderId relation by
     // looking the order up), refund last (it requires the payment to exist).
     if (normalized.order) {

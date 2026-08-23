@@ -3,8 +3,10 @@ import { parseWebhookEnvelope } from "../webhooks.js";
 import { normalizeWebhookEvent } from "../normalize.js";
 import { RazorpayWebhookPayloadError } from "../errors.js";
 import {
+  orderPaidArrayNotesPayload,
   orderPaidPayload,
   paymentAuthorizedPayload,
+  paymentCapturedInvalidStatusPayload,
   paymentCapturedPayload,
   paymentFailedPayload,
   refundFailedPayload,
@@ -80,5 +82,60 @@ describe("normalizeWebhookEvent", () => {
       }),
     );
     expect(() => normalizeWebhookEvent(envelope, "evt_7")).toThrow(RazorpayWebhookPayloadError);
+  });
+
+  // Regression coverage for the live Test Mode finding: Razorpay sends
+  // "notes": [] (an empty array) rather than {} or null when no notes are
+  // attached, and the schemas previously rejected that shape outright.
+  describe("real-world notes: [] payloads (live Test Mode regression)", () => {
+    it("normalizes a payment entity with notes: [] successfully", () => {
+      const envelope = parseWebhookEnvelope(JSON.stringify(orderPaidArrayNotesPayload));
+      const normalized = normalizeWebhookEvent(envelope, "evt_notes_array_1");
+
+      expect(normalized.entityValidationError).toBeUndefined();
+      expect(normalized.payment).toMatchObject({
+        providerPaymentId: "pay_test0000000010",
+        status: "captured",
+        method: "card",
+        amount: 10000,
+      });
+    });
+
+    it("normalizes an order entity with notes: [] successfully", () => {
+      const envelope = parseWebhookEnvelope(JSON.stringify(orderPaidArrayNotesPayload));
+      const normalized = normalizeWebhookEvent(envelope, "evt_notes_array_2");
+
+      expect(normalized.entityValidationError).toBeUndefined();
+      expect(normalized.order).toMatchObject({
+        providerOrderId: "order_test0000000010",
+        status: "paid",
+      });
+    });
+
+    it("never leaks the raw array into the internal typed notes field", () => {
+      const envelope = parseWebhookEnvelope(JSON.stringify(orderPaidArrayNotesPayload));
+      const normalized = normalizeWebhookEvent(envelope, "evt_notes_array_3");
+
+      // The normalized internal representation is always
+      // Record<string, unknown> | null — an array is never a valid value
+      // here, even though the raw Razorpay payload used one.
+      expect(normalized.payment?.notes).toBeNull();
+      expect(normalized.order?.notes).toBeNull();
+      expect(Array.isArray(normalized.payment?.notes)).toBe(false);
+      expect(Array.isArray(normalized.order?.notes)).toBe(false);
+    });
+  });
+
+  describe("entity validation failures are surfaced, never silently dropped", () => {
+    it("still fails validation for a genuinely malformed entity (unrelated to notes)", () => {
+      const envelope = parseWebhookEnvelope(JSON.stringify(paymentCapturedInvalidStatusPayload));
+      const normalized = normalizeWebhookEvent(envelope, "evt_invalid_status");
+
+      // The entity is NOT silently dropped as if absent: the caller can
+      // detect the failure via entityValidationError.
+      expect(normalized.payment).toBeUndefined();
+      expect(normalized.entityValidationError).toBeDefined();
+      expect(normalized.entityValidationError).toContain("payment");
+    });
   });
 });

@@ -75,4 +75,9 @@ export interface NormalizedPaymentEvent {
   payment?: NormalizedPayment;
   order?: NormalizedOrder;
   refund?: NormalizedRefund;
+  /** Set when the envelope named a payment/order/refund entity that failed
+   * its schema validation — the entity is deliberately left unattached
+   * above rather than upserted from unvalidated data. The caller must
+   * treat this as a processing failure (never mark the event PROCESSED). */
+  entityValidationError?: string;
 }

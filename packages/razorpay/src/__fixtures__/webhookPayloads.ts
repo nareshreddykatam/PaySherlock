@@ -193,3 +193,93 @@ export const malformedPayload = {
   // `contains`/`payload` deliberately missing/malformed.
   payload: { payment: { entity: { foo: "bar" } } },
 };
+
+// The real shape confirmed against a live Razorpay Test Mode webhook
+// delivery: `notes` arrives as an empty array, not `{}` or `null`, when no
+// notes are attached. Distinct from `malformedPayload` above (which is
+// missing required fields entirely) — this payload is otherwise complete
+// and valid.
+export const orderPaidArrayNotesPayload = {
+  entity: "event",
+  account_id: "acc_test000000000000",
+  event: "order.paid",
+  contains: ["payment", "order"],
+  payload: {
+    payment: {
+      entity: {
+        id: "pay_test0000000010",
+        entity: "payment",
+        amount: 10000,
+        currency: "INR",
+        status: "captured",
+        order_id: "order_test0000000010",
+        international: false,
+        method: "card",
+        amount_refunded: 0,
+        refund_status: null,
+        captured: true,
+        description: "#test",
+        card_id: "card_test0000000010",
+        bank: null,
+        wallet: null,
+        vpa: null,
+        email: "void@razorpay.com",
+        contact: "+919999999999",
+        notes: [],
+        fee: 220,
+        tax: 0,
+        error_code: null,
+        error_description: null,
+        error_source: null,
+        error_step: null,
+        error_reason: null,
+        created_at: 1767461836,
+      },
+    },
+    order: {
+      entity: {
+        id: "order_test0000000010",
+        entity: "order",
+        amount: 10000,
+        amount_paid: 10000,
+        amount_due: 0,
+        currency: "INR",
+        receipt: null,
+        offer_id: null,
+        status: "paid",
+        attempts: 1,
+        notes: [],
+        created_at: 1767461802,
+      },
+    },
+  },
+  created_at: 1767462096,
+};
+
+/** A payment entity that fails schema validation for a reason unrelated to
+ * `notes` — an invalid `status` enum value — used to confirm the fix only
+ * widens acceptance of the real-world `notes` shape, not validation in
+ * general. */
+export const paymentCapturedInvalidStatusPayload = {
+  entity: "event",
+  account_id: "acc_test000000000000",
+  event: "payment.captured",
+  contains: ["payment"],
+  payload: {
+    payment: {
+      entity: {
+        id: "pay_test0000000011",
+        entity: "payment",
+        amount: 10000,
+        currency: "INR",
+        status: "not_a_real_status",
+        order_id: "order_test0000000011",
+        method: "card",
+        captured: true,
+        notes: {},
+        created_at: 1767462000,
+      },
+    },
+  },
+  created_at: 1767462001,
+};

@@ -23,6 +23,18 @@ function normalizeMethod(method: string): NormalizedPaymentMethod {
   return (KNOWN_PAYMENT_METHODS.has(method) ? method : "other") as NormalizedPaymentMethod;
 }
 
+/** Razorpay sends `notes` as an object when notes are attached, but as an
+ * empty array (`[]`) when they are not — never as `{}`. The internal
+ * typed representation is always `Record<string, unknown> | null`, so an
+ * array (which only ever means "no notes" in practice) collapses to
+ * `null` here rather than leaking Razorpay's raw shape into typed fields. */
+function normalizeNotes(
+  notes: Record<string, unknown> | unknown[] | null | undefined,
+): Record<string, unknown> | null {
+  if (notes == null || Array.isArray(notes)) return null;
+  return notes;
+}
+
 export function normalizePayment(entity: RazorpayPaymentEntity): NormalizedPayment {
   return {
     provider: "razorpay",
@@ -39,7 +51,7 @@ export function normalizePayment(entity: RazorpayPaymentEntity): NormalizedPayme
     contact: entity.contact ?? null,
     errorCode: entity.error_code ?? null,
     errorDescription: entity.error_description ?? null,
-    notes: entity.notes ?? null,
+    notes: normalizeNotes(entity.notes),
     createdAt: new Date(entity.created_at * 1000),
     raw: entity,
   };
@@ -56,7 +68,7 @@ export function normalizeOrder(entity: RazorpayOrderEntity): NormalizedOrder {
     status: entity.status,
     receipt: entity.receipt ?? null,
     attempts: entity.attempts ?? 0,
-    notes: entity.notes ?? null,
+    notes: normalizeNotes(entity.notes),
     createdAt: new Date(entity.created_at * 1000),
     raw: entity,
   };
@@ -72,7 +84,7 @@ export function normalizeRefund(entity: RazorpayRefundEntity): NormalizedRefund 
     status: entity.status,
     speedProcessed: entity.speed_processed ?? null,
     speedRequested: entity.speed_requested ?? null,
-    notes: entity.notes ?? null,
+    notes: normalizeNotes(entity.notes),
     createdAt: new Date(entity.created_at * 1000),
     raw: entity,
   };
@@ -124,22 +136,46 @@ export function normalizeWebhookEvent(
     payload: envelope,
   };
 
+  // A present-but-invalid entity is a distinct condition from an absent
+  // one: silently leaving it unattached (as if the envelope simply hadn't
+  // named it) would let `webhookProcessor.ts` skip the upsert and still
+  // mark the event PROCESSED — a false success. Instead, every validation
+  // failure is collected into `entityValidationError`; the caller must
+  // check this and treat it as a processing failure, never a no-op.
+  const validationErrors: string[] = [];
+
   const paymentEnvelope = envelope.payload.payment;
   if (paymentEnvelope) {
     const parsed = RazorpayPaymentEntitySchema.safeParse(paymentEnvelope.entity);
-    if (parsed.success) normalized.payment = normalizePayment(parsed.data);
+    if (parsed.success) {
+      normalized.payment = normalizePayment(parsed.data);
+    } else {
+      validationErrors.push(`"payment" entity failed validation: ${parsed.error.message}`);
+    }
   }
 
   const orderEnvelope = envelope.payload.order;
   if (orderEnvelope) {
     const parsed = RazorpayOrderEntitySchema.safeParse(orderEnvelope.entity);
-    if (parsed.success) normalized.order = normalizeOrder(parsed.data);
+    if (parsed.success) {
+      normalized.order = normalizeOrder(parsed.data);
+    } else {
+      validationErrors.push(`"order" entity failed validation: ${parsed.error.message}`);
+    }
   }
 
   const refundEnvelope = envelope.payload.refund;
   if (refundEnvelope) {
     const parsed = RazorpayRefundEntitySchema.safeParse(refundEnvelope.entity);
-    if (parsed.success) normalized.refund = normalizeRefund(parsed.data);
+    if (parsed.success) {
+      normalized.refund = normalizeRefund(parsed.data);
+    } else {
+      validationErrors.push(`"refund" entity failed validation: ${parsed.error.message}`);
+    }
+  }
+
+  if (validationErrors.length > 0) {
+    normalized.entityValidationError = validationErrors.join("; ");
   }
 
   return normalized;

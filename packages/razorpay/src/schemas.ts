@@ -9,6 +9,17 @@ import { z } from "zod";
 //          https://razorpay.com/docs/webhooks/orders/
 //          https://razorpay.com/docs/webhooks/payloads/refunds/
 
+// Confirmed against a real Test Mode webhook delivery: Razorpay sends
+// `"notes": []` (an empty array) when no notes are attached, not `{}` or
+// `null` — a `z.record()` alone rejects that shape. Accept both real-world
+// forms here; `normalizePayment`/`normalizeOrder`/`normalizeRefund` collapse
+// the array case to `null` so the internal typed representation never sees
+// a raw array where it expects a record.
+const RazorpayNotesSchema = z
+  .union([z.record(z.string(), z.unknown()), z.array(z.unknown())])
+  .nullable()
+  .optional();
+
 export const RazorpayPaymentEntitySchema = z
   .object({
     id: z.string(),
@@ -25,7 +36,7 @@ export const RazorpayPaymentEntitySchema = z
     contact: z.string().nullable().optional(),
     error_code: z.string().nullable().optional(),
     error_description: z.string().nullable().optional(),
-    notes: z.record(z.string(), z.unknown()).nullable().optional(),
+    notes: RazorpayNotesSchema,
     created_at: z.number().int(),
   })
   .passthrough();
@@ -43,7 +54,7 @@ export const RazorpayOrderEntitySchema = z
     receipt: z.string().nullable().optional(),
     status: z.enum(["created", "attempted", "paid"]),
     attempts: z.number().int().optional(),
-    notes: z.record(z.string(), z.unknown()).nullable().optional(),
+    notes: RazorpayNotesSchema,
     created_at: z.number().int(),
   })
   .passthrough();
@@ -60,7 +71,7 @@ export const RazorpayRefundEntitySchema = z
     status: z.enum(["pending", "processed", "failed"]),
     speed_processed: z.string().nullable().optional(),
     speed_requested: z.string().nullable().optional(),
-    notes: z.record(z.string(), z.unknown()).nullable().optional(),
+    notes: RazorpayNotesSchema,
     created_at: z.number().int(),
   })
   .passthrough();
