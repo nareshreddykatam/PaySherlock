@@ -1,11 +1,12 @@
 "use client";
 
-import { Suspense } from "react";
+import { Suspense, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { ShieldCheck } from "lucide-react";
 import type { Recommendation, RecommendationStatus } from "@paysherlock/types";
 import { useApiQuery } from "@/lib/api/useApiQuery";
 import { getRecommendations } from "@/lib/api/recommendations";
+import { RecommendationCard } from "@/components/recommendation/RecommendationCard";
 import { Badge, type BadgeTone } from "@/components/ui/Badge";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { ErrorState } from "@/components/ui/ErrorState";
@@ -134,10 +135,29 @@ export default function RecommendationsPage() {
 
 function RecommendationsPageContent() {
   const issueId = useSearchParams().get("issueId") ?? undefined;
+  // Requests the API's maximum page size — the server's default (20) would
+  // otherwise push the oldest recommendations (createdAt desc ordering),
+  // including the original single-payment demo recommendation, off this
+  // page with no pagination control to reach them.
   const { data, error, loading, reload } = useApiQuery(
-    () => getRecommendations({ issueId }),
+    () => getRecommendations({ issueId, limit: 100 }),
     [issueId],
   );
+
+  // Local-only overrides so approving/rejecting a card (via the same
+  // RecommendationCard used everywhere else) moves it from "Awaiting your
+  // decision" into history without a full refetch. Derived at render time,
+  // never synced from `data` via an effect — `data` stays the single source
+  // of truth, this just shadows individual rows the user has just acted on.
+  const [overrides, setOverrides] = useState<Record<string, Recommendation>>({});
+
+  function handleChange(updated: Recommendation) {
+    setOverrides((prev) => ({ ...prev, [updated.id]: updated }));
+  }
+
+  const items = (data?.data ?? []).map((r) => overrides[r.id] ?? r);
+  const pending = items.filter((r) => r.status === "PENDING_APPROVAL");
+  const history = items.filter((r) => r.status !== "PENDING_APPROVAL");
 
   return (
     <div className="flex flex-col gap-6">
@@ -150,9 +170,7 @@ function RecommendationsPageContent() {
         </p>
       </header>
 
-      {issueId && data && data.data.length > 0 ? (
-        <RecoveryBatchSummary recommendations={data.data} />
-      ) : null}
+      {issueId && items.length > 0 ? <RecoveryBatchSummary recommendations={items} /> : null}
 
       {error ? (
         <ErrorState
@@ -166,18 +184,46 @@ function RecommendationsPageContent() {
             <Skeleton key={i} className="h-16" />
           ))}
         </div>
-      ) : data && data.data.length === 0 ? (
+      ) : data && items.length === 0 ? (
         <EmptyState
           icon={<ShieldCheck className="h-6 w-6" />}
           title="No recommendations yet."
           description="Run an investigation on a specific payment to see PaySherlock's recommended actions here."
         />
       ) : data ? (
-        <div className="overflow-hidden rounded-lg border border-border">
-          {data.data.map((recommendation) => (
-            <RecommendationRow key={recommendation.id} recommendation={recommendation} />
-          ))}
-        </div>
+        <>
+          {pending.length > 0 ? (
+            <section className="flex flex-col gap-4">
+              <h2 className="text-lg font-medium text-ink">
+                Awaiting your decision ({pending.length})
+              </h2>
+              <p className="text-sm text-ink-muted">
+                No financial action has been executed for any of these. Each requires its own
+                explicit approval — approving one never approves another.
+              </p>
+              {pending.map((recommendation) => (
+                <RecommendationCard
+                  key={recommendation.id}
+                  recommendation={recommendation}
+                  onChange={handleChange}
+                />
+              ))}
+            </section>
+          ) : null}
+
+          {history.length > 0 ? (
+            <section className="flex flex-col gap-3">
+              {pending.length > 0 ? (
+                <h2 className="text-lg font-medium text-ink">History ({history.length})</h2>
+              ) : null}
+              <div className="overflow-hidden rounded-lg border border-border">
+                {history.map((recommendation) => (
+                  <RecommendationRow key={recommendation.id} recommendation={recommendation} />
+                ))}
+              </div>
+            </section>
+          ) : null}
+        </>
       ) : null}
     </div>
   );

@@ -20,6 +20,7 @@ import { registerOverviewRoutes } from "./routes/overview.js";
 import { registerIssueRoutes } from "./routes/issues.js";
 import { registerRecommendationRoutes } from "./routes/recommendations.js";
 import { registerActionRoutes } from "./routes/actions.js";
+import { registerEvaluationRoutes } from "./routes/evaluation.js";
 
 export interface ServerDeps {
   db: Database;
@@ -133,6 +134,10 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
   registerIssueRoutes(app, resolvedDeps);
   registerRecommendationRoutes(app, resolvedDeps);
   registerActionRoutes(app, resolvedDeps);
+  // Track 03 (AI Revenue Recovery): a read-only, merchant-independent
+  // synthetic evaluation endpoint — no db/merchant dependency, so it takes
+  // the bare `app`, not `resolvedDeps`.
+  registerEvaluationRoutes(app);
 
   return app;
 }

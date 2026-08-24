@@ -53,6 +53,16 @@ describe("RecommendationCard", () => {
     expect(screen.queryByRole("button", { name: "OK" })).not.toBeInTheDocument();
   });
 
+  it("explicitly states no financial action has been executed while pending approval", () => {
+    render(<RecommendationCard recommendation={BASE} />);
+
+    expect(
+      screen.getByText(
+        "No financial action has been executed. This refund will only be sent to Razorpay if a human explicitly approves it below.",
+      ),
+    ).toBeInTheDocument();
+  });
+
   it("requires an explicit confirmation naming the action before approving", async () => {
     const user = userEvent.setup();
     mockFetchOnce(200, { ...BASE, status: "SUCCEEDED" });

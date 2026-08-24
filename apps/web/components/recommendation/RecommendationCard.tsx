@@ -124,8 +124,9 @@ export function RecommendationCard({ recommendation, onChange }: RecommendationC
 
       {current.status === "PENDING_APPROVAL" ? (
         <>
-          <p className="mt-4 text-sm text-ink-muted">
-            This action will send a refund request to Razorpay.
+          <p className="mt-4 text-sm font-medium text-ink">
+            No financial action has been executed. This refund will only be sent to Razorpay if a
+            human explicitly approves it below.
           </p>
           <div className="mt-3 flex gap-3">
             <Button onClick={() => setConfirmOpen(true)} disabled={pending}>

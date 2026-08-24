@@ -11,6 +11,7 @@ import {
   isNotEligibleForRecovery,
   type RecoveryBatch,
 } from "@/lib/api/issues";
+import { getTrack03Evaluation } from "@/lib/api/evaluation";
 import { ResultView } from "@/components/investigation/ResultView";
 import { RecommendationCard } from "@/components/recommendation/RecommendationCard";
 import { Badge } from "@/components/ui/Badge";
@@ -52,6 +53,118 @@ function formatChange(issue: {
   }
   const pp = (issue.absoluteChange * 100).toFixed(1);
   return `${issue.absoluteChange >= 0 ? "+" : ""}${pp}pp`;
+}
+
+/** Turns the batch's real rejectedCandidates into an honest one-line
+ * explanation for the zero-eligible case — never a generic "no results"
+ * message that hides why. */
+function summarizeNoEligibleCandidates(batch: RecoveryBatch): string {
+  if (batch.candidatesScanned === 0) {
+    return "No captured payments were found in this degradation window.";
+  }
+  const reasons = new Set(batch.rejectedCandidates.map((c) => c.reason));
+  if (reasons.size === 1) {
+    const [reason] = reasons;
+    return `All ${batch.candidatesScanned} payment${batch.candidatesScanned === 1 ? "" : "s"} scanned in this window were rejected for the same reason: "${reason}". No financial action was proposed.`;
+  }
+  return `All ${batch.candidatesScanned} payments scanned in this window were rejected for varying reasons (see below). No financial action was proposed.`;
+}
+
+/**
+ * Track 03 (AI Revenue Recovery): a separately-labeled panel for the
+ * offline evaluation harness's result — fetched live from
+ * GET /eval/track03 (the same runTrack03Evaluation() function
+ * `pnpm eval:track03` runs) rather than a constant duplicated here, so it
+ * can never silently drift from the real evaluation. Deliberately visually
+ * distinct from the live Revenue Recovery panel above: this describes a
+ * mocked Razorpay client run against synthetic payment rows, never this
+ * merchant's real data, and never creates a Payment record.
+ */
+function Track03EvaluationPanel() {
+  const { data, error, loading } = useApiQuery(() => getTrack03Evaluation(), []);
+
+  if (loading) return <Skeleton className="h-40" />;
+  if (error || !data) return null;
+
+  const { metrics } = data;
+
+  return (
+    <div className="rounded-lg border border-dashed border-border-strong bg-surface-2 p-6">
+      <p className="text-xs font-semibold uppercase tracking-wide text-ink-muted">
+        Synthetic Track 03 Evaluation
+      </p>
+      <p className="mt-1 text-sm font-medium text-ink">
+        Mock Razorpay client — no real money recovered.
+      </p>
+      <p className="mt-1 text-sm text-ink-muted">{data.environment.disclosure}</p>
+
+      <dl className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-4">
+        <div>
+          <dt className="text-xs font-semibold uppercase tracking-wide text-ink-faint">
+            Attempted
+          </dt>
+          <dd className="mt-1 text-lg font-semibold tabular-nums text-ink">
+            {formatCompactINR(metrics.amountAttemptedMinorUnits)}
+          </dd>
+        </div>
+        <div>
+          <dt className="text-xs font-semibold uppercase tracking-wide text-ink-faint">
+            Recovered
+          </dt>
+          <dd className="mt-1 text-lg font-semibold tabular-nums text-ink">
+            {formatCompactINR(metrics.amountRecoveredMinorUnits)}
+          </dd>
+        </div>
+        <div>
+          <dt className="text-xs font-semibold uppercase tracking-wide text-ink-faint">
+            Recovery rate
+          </dt>
+          <dd className="mt-1 text-lg font-semibold tabular-nums text-ink">
+            {(metrics.recoveryRate * 100).toFixed(0)}%
+          </dd>
+        </div>
+        <div>
+          <dt className="text-xs font-semibold uppercase tracking-wide text-ink-faint">
+            Succeeded / Failed
+          </dt>
+          <dd className="mt-1 text-lg font-semibold tabular-nums text-ink">
+            {metrics.successfulRecoveries} / {metrics.failedRecoveries}
+          </dd>
+        </div>
+      </dl>
+
+      <dl className="mt-4 grid grid-cols-2 gap-4 border-t border-border pt-4 sm:grid-cols-3">
+        <div>
+          <dt className="text-xs font-semibold uppercase tracking-wide text-ink-faint">
+            Duplicate executions
+          </dt>
+          <dd className="mt-1 text-sm tabular-nums text-ink-muted">
+            {metrics.duplicateExecutionCount}
+          </dd>
+        </div>
+        <div>
+          <dt className="text-xs font-semibold uppercase tracking-wide text-ink-faint">
+            False successes
+          </dt>
+          <dd className="mt-1 text-sm tabular-nums text-ink-muted">{metrics.falseSuccessCount}</dd>
+        </div>
+        <div>
+          <dt className="text-xs font-semibold uppercase tracking-wide text-ink-faint">
+            Scenarios passed
+          </dt>
+          <dd className="mt-1 text-sm tabular-nums text-ink-muted">
+            {data.scenariosPassed} / {data.scenariosTotal}
+          </dd>
+        </div>
+      </dl>
+
+      <ul className="mt-4 list-disc space-y-1 pl-5 text-xs text-ink-faint">
+        {data.limitations.map((limitation) => (
+          <li key={limitation}>{limitation}</li>
+        ))}
+      </ul>
+    </div>
+  );
 }
 
 export default function IssueDetailPage() {
@@ -200,6 +313,25 @@ export default function IssueDetailPage() {
                 ) : null}
               </div>
 
+              <ul className="list-disc space-y-1 pl-5 text-sm text-ink-muted">
+                <li>
+                  No refund is ever sent automatically — every candidate requires its own explicit
+                  human approval.
+                </li>
+                <li>
+                  There is no bulk-approve action: approving one recommendation never approves
+                  another.
+                </li>
+                <li>
+                  A payment already covered by an earlier recommendation is automatically excluded
+                  from every later batch.
+                </li>
+                <li>
+                  Batch size and total amount are bounded server-side and cannot be changed by this
+                  page.
+                </li>
+              </ul>
+
               {batchError ? (
                 <p role="alert" className="text-sm text-red">
                   {batchError}
@@ -292,11 +424,27 @@ export default function IssueDetailPage() {
                     </div>
                   ) : (
                     <div className="rounded-lg border border-border bg-surface p-6 text-sm text-ink-muted">
-                      No eligible recovery candidates were found for this window.
+                      <p>{summarizeNoEligibleCandidates(batch)}</p>
+                      {batch.rejectedCandidates.length > 0 ? (
+                        <details className="mt-3">
+                          <summary className="cursor-pointer text-ink">
+                            Show rejected candidates ({batch.rejectedCandidates.length})
+                          </summary>
+                          <ul className="mt-2 space-y-1 text-xs">
+                            {batch.rejectedCandidates.map((candidate) => (
+                              <li key={candidate.paymentId} className="tabular-nums">
+                                {candidate.razorpayPaymentId} — {candidate.reason}
+                              </li>
+                            ))}
+                          </ul>
+                        </details>
+                      ) : null}
                     </div>
                   )}
                 </>
               ) : null}
+
+              <Track03EvaluationPanel />
             </section>
           ) : null}
         </div>
